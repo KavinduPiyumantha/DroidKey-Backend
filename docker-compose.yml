@@ -6,10 +6,9 @@ services:
     container_name: mobsf
     ports:
       - "8000:8000"
+    networks:
+      - droidkey-net
     restart: always
-    # Optional: If MobSF needs to communicate with external devices or Genymotion, add environment variables and exposed ports as needed
-    # environment:
-    #   - MOBSF_ANALYZER_IDENTIFIER=<adb device identifier>
 
   django:
     build: .
@@ -21,6 +20,12 @@ services:
       - "8001:8001"
     depends_on:
       - mobsf
+    networks:
+      - droidkey-net
     environment:
       - DEBUG=1
       - DJANGO_ALLOWED_HOSTS=127.0.0.1 localhost
+
+networks:
+  droidkey-net:
+    driver: bridge
