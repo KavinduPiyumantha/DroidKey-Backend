@@ -21,7 +21,12 @@ class APKUploadView(APIView):
         abs_path = os.path.join(settings.MEDIA_ROOT, file_path)
 
         # Perform analysis with MobSF
-        analysis_result = self.analyze_with_mobsf(abs_path, file.name)
+        upload_response = self.upload_to_mobsf(abs_path, file.name)
+        if "error" in upload_response:
+            return Response(upload_response, status=status.HTTP_400_BAD_REQUEST)
+
+        # Use the hash to perform the scan
+        analysis_result = self.scan_with_mobsf(upload_response['hash'])
 
         # Save analysis result to database
         apk_analysis = APKAnalysis.objects.create(
@@ -31,7 +36,7 @@ class APKUploadView(APIView):
         serializer = APKAnalysisSerializer(apk_analysis)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-    def analyze_with_mobsf(self, file_path, file_name):
+    def upload_to_mobsf(self, file_path, file_name):
         try:
             # Open the file from the media directory
             with open(file_path, 'rb') as f:
@@ -39,22 +44,49 @@ class APKUploadView(APIView):
 
                 # Headers for MobSF API
                 headers = {
-                    # 'Authorization': "113ab90737077f3aa77a671febb83a892f2fb16b9f821b4e9ac8b5cc2da766bb"
                     'Authorization': settings.MOBSF_API_KEY
                 }
 
-                # MOBSF_API_URL = "http://mobsf:8000/api/v1/upload"
+                # Upload API URL
+                mobsf_upload_url = f"{settings.MOBSF_API_URL}/api/v1/upload"
 
                 # Send file to MobSF for analysis
-                response = requests.post(settings.MOBSF_API_URL, files=files, headers=headers)
+                response = requests.post(mobsf_upload_url, files=files, headers=headers)
 
                 if response.status_code == 200:
-                    # Successful analysis - return analysis details
-                    analysis_data = response.json()
-                    return analysis_data
+                    # Successful upload - return analysis details including the hash
+                    return response.json()
                 else:
                     # Handle error from MobSF API
-                    return {"error": f"MobSF API error: {response.text}"}
+                    return {"error": f"MobSF API error during upload: {response.text}"}
         except Exception as e:
             # Handle any other errors
-            return {"error": f"An exception occurred: {str(e)}"}
+            return {"error": f"An exception occurred during file upload: {str(e)}"}
+
+    def scan_with_mobsf(self, file_hash):
+        try:
+            # Headers for MobSF API
+            headers = {
+                'Authorization': settings.MOBSF_API_KEY
+            }
+
+            # Scan API URL
+            mobsf_scan_url = f"{settings.MOBSF_API_URL}/api/v1/scan"
+
+            # Data for scanning
+            data = {
+                'hash': file_hash
+            }
+
+            # Send request to MobSF to scan the uploaded file
+            response = requests.post(mobsf_scan_url, headers=headers, data=data)
+
+            if response.status_code == 200:
+                # Successful scan - return analysis details
+                return response.json()
+            else:
+                # Handle error from MobSF API
+                return {"error": f"MobSF API error during scan: {response.text}"}
+        except Exception as e:
+            # Handle any other errors
+            return {"error": f"An exception occurred during file scan: {str(e)}"}
