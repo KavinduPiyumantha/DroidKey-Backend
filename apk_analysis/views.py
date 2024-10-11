@@ -10,6 +10,7 @@ from django.core.files.storage import default_storage
 import os
 import requests
 import logging
+import re
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -59,18 +60,15 @@ class APKUploadView(APIView):
 
         logger.info("JADX decompilation completed successfully")
 
-        # Save analysis result to database (combined MobSF and JADX results)
-        combined_result = {
-            "mobsf_analysis": json_report_response,
-            "jadx_decompilation": jadx_result,
-        }
-        apk_analysis = APKAnalysis.objects.create(
-            file_name=file.name,
-            analysis_result=combined_result
-        )
-        serializer = APKAnalysisSerializer(apk_analysis)
-        logger.info("Analysis results saved to the database successfully")
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        # Perform security scoring and analysis
+        try:
+            analysis_result = self.perform_security_analysis(json_report_response, jadx_result['message'])
+        except Exception as e:
+            logger.error(f"Exception during security scoring: {str(e)}")
+            return Response({"error": f"Exception during security scoring: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        # Return only the analysis result
+        return Response(analysis_result, status=status.HTTP_200_OK)
 
     def upload_to_mobsf(self, file_path, file_name):
         try:
@@ -181,3 +179,157 @@ class APKUploadView(APIView):
         except Exception as e:
             logger.error(f"Exception during JADX decompilation: {str(e)}")
             return {"error": f"An exception occurred during decompilation: {str(e)}"}
+
+    def perform_security_analysis(self, json_report, jadx_output_dir):
+        """
+        Perform a comprehensive security analysis using MobSF report and JADX output.
+        Returns a detailed JSON result including each criterion's status.
+        """
+        final_score = 0
+        detailed_scores = {}
+
+        # Define criteria weights
+        weights = {
+            "Mobile Device Security": 15,
+            "Data in Transit": 20,
+            "Data Storage": 25,
+            "Cryptographic Practices": 20,
+            "Obfuscation & Code Security": 10,
+            "Secure Key Management": 5,
+            "Authentication & Access Control": 5,
+            "Monitoring & Auditing": 5
+        }
+
+        # Perform checks for each category and calculate scores
+
+        # Mobile Device Security
+        detailed_scores["Mobile Device Security"] = {
+            "prevent_rooted_device_access": {
+                "score": 5 if json_report.get("root_detection") == "passed" else 0,
+                "status": "Passed" if json_report.get("root_detection") == "passed" else "Failed",
+                "details": "Application has root detection mechanisms implemented to prevent operation on rooted devices."
+            },
+            "disable_emulator_access": {
+                "score": 5 if json_report.get("emulator_detection") == "passed" else 0,
+                "status": "Passed" if json_report.get("emulator_detection") == "passed" else "Failed",
+                "details": "Emulator detection is in place to restrict access when running on emulators."
+            }
+        }
+
+        # Data in Transit
+        detailed_scores["Data in Transit"] = {
+            "https_enforced": {
+                "score": 5 if json_report.get("uses_https") == "yes" else 0,
+                "status": "Passed" if json_report.get("uses_https") == "yes" else "Failed",
+                "details": "HTTPS is enforced to ensure all communication is encrypted."
+            },
+            "prevent_plaintext_transmission": {
+                "score": 5 if json_report.get("prevent_plaintext_transmission") == "yes" else 0,
+                "status": "Passed" if json_report.get("prevent_plaintext_transmission") == "yes" else "Failed",
+                "details": "Sensitive data is not transmitted in plaintext, ensuring secure communication."
+            }
+        }
+
+        # Data Storage
+        hardcoded_keys = self.find_hardcoded_keys(jadx_output_dir)
+        detailed_scores["Data Storage"] = {
+            "encrypted_storage": {
+                "score": 5 if json_report.get("secure_storage") == "yes" else 0,
+                "status": "Passed" if json_report.get("secure_storage") == "yes" else "Failed",
+                "details": "API keys and sensitive data are stored in encrypted, secure storage."
+            },
+            "no_hardcoded_keys": {
+                "score": 5 if not hardcoded_keys else 0,
+                "status": "Passed" if not hardcoded_keys else "Failed",
+                "details": f"Hardcoded keys found in source code: {hardcoded_keys}" if hardcoded_keys else "No hardcoded API keys found."
+            }
+        }
+
+        # Cryptographic Practices
+        detailed_scores["Cryptographic Practices"] = {
+            "use_strong_encryption": {
+                "score": 5 if json_report.get("encryption_algorithm") == "AES-256" else 0,
+                "status": "Secure" if json_report.get("encryption_algorithm") == "AES-256" else "Insecure",
+                "details": "The application uses AES-256 for encryption, which is considered secure."
+            }
+        }
+
+        # Obfuscation & Code Security
+        detailed_scores["Obfuscation & Code Security"] = {
+            "code_obfuscation": {
+                "score": 5 if json_report.get("obfuscation_enabled") == "yes" else 0,
+                "status": "Enabled" if json_report.get("obfuscation_enabled") == "yes" else "Not Enabled",
+                "details": "Code obfuscation techniques are implemented to protect against reverse engineering."
+            }
+        }
+
+        # Secure Key Management
+        detailed_scores["Secure Key Management"] = {
+            "server_side_key_management": {
+                "score": 5 if json_report.get("server_side_key_management") == "yes" else 0,
+                "status": "Passed" if json_report.get("server_side_key_management") == "yes" else "Failed",
+                "details": "API keys are managed server-side, reducing the risk of exposure."
+            }
+        }
+
+        # Authentication & Access Control
+        detailed_scores["Authentication & Access Control"] = {
+            "token_based_authentication": {
+                "score": 5 if json_report.get("token_auth") == "yes" else 0,
+                "status": "Passed" if json_report.get("token_auth") == "yes" else "Failed",
+                "details": "Token-based authentication (e.g., OAuth 2.0) is used to limit API key exposure."
+            }
+        }
+
+        # Monitoring & Auditing
+        detailed_scores["Monitoring & Auditing"] = {
+            "logging_api_key_usage": {
+                "score": 5 if json_report.get("logging_enabled") == "yes" else 0,
+                "status": "Enabled" if json_report.get("logging_enabled") == "yes" else "Not Enabled",
+                "details": "Logging is enabled to monitor API key usage and detect potential abuse."
+            }
+        }
+
+        # Calculate total score
+        for category, criteria in detailed_scores.items():
+            for criterion in criteria.values():
+                final_score += criterion['score']
+
+        # Normalize final score to be out of 100
+        total_weight = sum(weights.values())
+        final_score = (final_score / (total_weight * 5)) * 100 if total_weight else 0
+
+        # Prepare and return analysis result in JSON format
+        return {
+            "final_score": final_score,
+            "detailed_scores": detailed_scores,
+        }
+
+    def find_hardcoded_keys(self, jadx_output_dir):
+        """
+        Analyze the decompiled source code files to find hardcoded API keys.
+        Returns a list of detected hardcoded keys with their details.
+        """
+        hardcoded_keys = []
+        key_patterns = [
+            r'AIza[0-9A-Za-z-_]{35}',  # Google API Key
+            r'AAAA[A-Za-z0-9_-]{7}:[A-Za-z0-9_-]{140}',  # Firebase Key
+            r'pk_live_[0-9a-zA-Z]{24}',  # Stripe Live Key
+        ]
+
+        # Walk through JADX decompiled files and look for hardcoded strings
+        for root, dirs, files in os.walk(jadx_output_dir):
+            for file in files:
+                if file.endswith(".java") or file.endswith(".xml"):
+                    file_path = os.path.join(root, file)
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                        for pattern in key_patterns:
+                            matches = re.findall(pattern, content)
+                            if matches:
+                                for match in matches:
+                                    hardcoded_keys.append({
+                                        "file": file_path,
+                                        "key": match
+                                    })
+        return hardcoded_keys
