@@ -144,34 +144,6 @@ class APKUploadView(APIView):
             logger.error(f"Exception during MobSF scorecard retrieval: {str(e)}")
             return {"error": f"An exception occurred during scorecard retrieval: {str(e)}"}
 
-    def generate_json_report(self, file_hash):
-        try:
-            # Headers for MobSF API
-            headers = {
-                'Authorization': settings.MOBSF_API_KEY
-            }
-
-            # Generate JSON report API URL
-            mobsf_json_report_url = f"{settings.MOBSF_API_URL}/api/v1/report_json"
-
-            # Data for generating JSON report
-            data = {
-                'hash': file_hash
-            }
-
-            # Send request to MobSF to generate JSON report
-            response = requests.post(mobsf_json_report_url, headers=headers, data=data)
-
-            if response.status_code == 200:
-                # Successful report generation - return JSON report details
-                return response.json()
-            else:
-                # Handle error from MobSF API
-                return {"error": f"MobSF API error during JSON report generation: {response.text}"}
-        except Exception as e:
-            logger.error(f"Exception during MobSF JSON report generation: {str(e)}")
-            return {"error": f"An exception occurred during JSON report generation: {str(e)}"}
-
     def decompile_with_jadx(self, file_path):
         try:
             # Path to output directory for JADX decompiled code
@@ -249,8 +221,10 @@ class APKUploadView(APIView):
             }
         }
 
-        # Data Storage
-        hardcoded_keys = self.find_hardcoded_keys(jadx_output_dir)
+        # Data Storage - checking both MobSF report and JADX output
+        hardcoded_keys_jadx = self.find_hardcoded_keys(json_report, jadx_output_dir)
+        hardcoded_keys_mobsf = self.extract_hardcoded_keys_from_mobsf(json_report)
+
         detailed_scores["Data Storage"] = {
             "encrypted_storage": {
                 "score": 5 if json_report.get("secure_storage") == "yes" else 0,
@@ -258,9 +232,14 @@ class APKUploadView(APIView):
                 "details": "API keys and sensitive data are stored in encrypted, secure storage."
             },
             "no_hardcoded_keys": {
-                "score": 5 if not hardcoded_keys else 0,
-                "status": "Passed" if not hardcoded_keys else "Failed",
-                "details": f"Hardcoded keys found in source code: {hardcoded_keys}" if hardcoded_keys else "No hardcoded API keys found."
+                "score": 5 if not hardcoded_keys_jadx and not hardcoded_keys_mobsf else 0,
+                "status": "Passed" if not hardcoded_keys_jadx and not hardcoded_keys_mobsf else "Failed",
+                "details": f"Hardcoded keys found: {hardcoded_keys_jadx + hardcoded_keys_mobsf}" if hardcoded_keys_jadx or hardcoded_keys_mobsf else "No hardcoded API keys found."
+            },
+            "backup_allowed": {
+                "score": 0 if any(item.get('title') == "Application Data can be Backed up" for item in json_report.get("warning", [])) else 5,
+                "status": "Failed" if any(item.get('title') == "Application Data can be Backed up" for item in json_report.get("warning", [])) else "Passed",
+                "details": "Application data backup is not allowed to ensure sensitive data is not easily copied."
             }
         }
 
@@ -270,6 +249,11 @@ class APKUploadView(APIView):
                 "score": 5 if json_report.get("encryption_algorithm") == "AES-256" else 0,
                 "status": "Secure" if json_report.get("encryption_algorithm") == "AES-256" else "Insecure",
                 "details": "The application uses AES-256 for encryption, which is considered secure."
+            },
+            "avoid_weak_hashing": {
+                "score": 0 if any(item.get('title') in ["MD5 is a weak hash known to have hash collisions.", "SHA-1 is a weak hash known to have hash collisions."] for item in json_report.get("warning", [])) else 5,
+                "status": "Failed" if any(item.get('title') in ["MD5 is a weak hash known to have hash collisions.", "SHA-1 is a weak hash known to have hash collisions."] for item in json_report.get("warning", [])) else "Passed",
+                "details": "Avoid weak hashing algorithms like MD5 or SHA-1 which are susceptible to collisions."
             }
         }
 
@@ -358,7 +342,7 @@ class APKUploadView(APIView):
                         "recommendation": "Enable detailed logging for API key usage and anomalies. Perform regular security audits."
                     }
                 ],
-                "findings_summary": f"{len(hardcoded_keys)} hardcoded secrets detected in source code. Details are provided in the detailed scores."
+                "findings_summary": f"{len(hardcoded_keys_jadx) + len(hardcoded_keys_mobsf)} hardcoded secrets detected in source code. Details are provided in the detailed scores."
             },
             "high": [],  # Populate based on your criteria
             "warning": [],  # Populate based on your criteria
@@ -376,20 +360,42 @@ class APKUploadView(APIView):
             "title": json_report.get("title", ""),
             "efr01": json_report.get("efr01", False)
         }
-        
-    def find_hardcoded_keys(self, jadx_output_dir):
+
+    def extract_hardcoded_keys_from_mobsf(self, json_report):
         """
-        Analyze the decompiled source code files to find hardcoded API keys.
+        Extract hardcoded API keys from MobSF's report.
+        """
+        hardcoded_keys = []
+        secrets_section = [item for item in json_report.get('warning', []) if item.get('title') == "This app may contain hardcoded secrets"]
+        for secret in secrets_section:
+            description = secret.get("description", "")
+            matches = re.findall(r'"([^"]+)"\s*:\s*"([^"]+)"', description)
+            for key, value in matches:
+                hardcoded_keys.append({"key": key, "value": value})
+        return hardcoded_keys
+
+    def find_hardcoded_keys(self, json_report, jadx_output_dir):
+        """
+        Combine MobSF JSON data and JADX output to find hardcoded API keys.
         Returns a list of detected hardcoded keys with their details.
         """
         hardcoded_keys = []
+
+        # Extract hardcoded secrets from MobSF JSON report
+        if "secrets" in json_report:
+            for secret in json_report["secrets"]:
+                hardcoded_keys.append({
+                    "source": "MobSF Report",
+                    "key": secret
+                })
+
+        # Find hardcoded keys in JADX decompiled code
         key_patterns = [
             r'AIza[0-9A-Za-z-_]{35}',  # Google API Key
             r'AAAA[A-Za-z0-9_-]{7}:[A-Za-z0-9_-]{140}',  # Firebase Key
             r'pk_live_[0-9a-zA-Z]{24}',  # Stripe Live Key
         ]
 
-        # Walk through JADX decompiled files and look for hardcoded strings
         for root, dirs, files in os.walk(jadx_output_dir):
             for file in files:
                 if file.endswith(".java") or file.endswith(".xml"):
@@ -401,7 +407,9 @@ class APKUploadView(APIView):
                             if matches:
                                 for match in matches:
                                     hardcoded_keys.append({
+                                        "source": "JADX Decompiled Code",
                                         "file": file_path,
                                         "key": match
                                     })
+
         return hardcoded_keys
