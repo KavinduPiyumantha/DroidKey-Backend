@@ -44,13 +44,13 @@ class APKUploadView(APIView):
 
         logger.info("MobSF scan completed successfully")
 
-        # Generate JSON report with MobSF
-        json_report_response = self.generate_json_report(upload_response['hash'])
-        if "error" in json_report_response:
-            logger.error(f"MobSF JSON report generation error: {json_report_response['error']}")
-            return Response(json_report_response, status=status.HTTP_400_BAD_REQUEST)
+        # Generate scorecard report with MobSF
+        scorecard_response = self.get_mobsf_scorecard(upload_response['hash'])
+        if "error" in scorecard_response:
+            logger.error(f"MobSF scorecard error: {scorecard_response['error']}")
+            return Response(scorecard_response, status=status.HTTP_400_BAD_REQUEST)
 
-        logger.info("MobSF JSON report generated successfully")
+        logger.info("MobSF scorecard retrieved successfully")
 
         # Decompile the APK using JADX
         jadx_result = self.decompile_with_jadx(abs_path)
@@ -62,7 +62,7 @@ class APKUploadView(APIView):
 
         # Perform security scoring and analysis
         try:
-            analysis_result = self.perform_security_analysis(json_report_response, jadx_result['message'])
+            analysis_result = self.perform_security_analysis(scorecard_response, jadx_result['message'])
         except Exception as e:
             logger.error(f"Exception during security scoring: {str(e)}")
             return Response({"error": f"Exception during security scoring: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -124,6 +124,25 @@ class APKUploadView(APIView):
         except Exception as e:
             logger.error(f"Exception during MobSF file scan: {str(e)}")
             return {"error": f"An exception occurred during file scan: {str(e)}"}
+
+    def get_mobsf_scorecard(self, file_hash):
+        try:
+            headers = {
+                'Authorization': settings.MOBSF_API_KEY
+            }
+            mobsf_scorecard_url = f"{settings.MOBSF_API_URL}/api/v1/scorecard"
+            data = {
+                'hash': file_hash
+            }
+            response = requests.post(mobsf_scorecard_url, headers=headers, data=data)
+
+            if response.status_code == 200:
+                return response.json()
+            else:
+                return {"error": f"MobSF API error during scorecard retrieval: {response.text}"}
+        except Exception as e:
+            logger.error(f"Exception during MobSF scorecard retrieval: {str(e)}")
+            return {"error": f"An exception occurred during scorecard retrieval: {str(e)}"}
 
     def generate_json_report(self, file_hash):
         try:
@@ -303,8 +322,61 @@ class APKUploadView(APIView):
         return {
             "final_score": final_score,
             "detailed_scores": detailed_scores,
+            "detailed_explanation": {
+                "summary": "This analysis provides insights into multiple aspects of your application, including data encryption, root detection, secure storage, and hardcoded key findings.",
+                "recommendations": [
+                    {
+                        "category": "Mobile Device Security",
+                        "recommendation": "Ensure root detection and emulator detection mechanisms are in place and tested effectively."
+                    },
+                    {
+                        "category": "Data in Transit",
+                        "recommendation": "Use HTTPS with TLS 1.2 or above, avoid plaintext transmission, and implement certificate pinning to prevent MITM attacks."
+                    },
+                    {
+                        "category": "Data Storage",
+                        "recommendation": "Use secure storage solutions such as Android Keystore for storing API keys and avoid hardcoded secrets in source code."
+                    },
+                    {
+                        "category": "Cryptographic Practices",
+                        "recommendation": "Use strong encryption algorithms (AES-256 or above), avoid weak hash functions (e.g., MD5, SHA-1), and ensure keys are managed securely."
+                    },
+                    {
+                        "category": "Obfuscation & Code Security",
+                        "recommendation": "Implement ProGuard or R8 for code obfuscation and make sure debuggable flags are disabled in production."
+                    },
+                    {
+                        "category": "Secure Key Management",
+                        "recommendation": "Consider managing keys server-side using key vaults to ensure secure access and automated rotation."
+                    },
+                    {
+                        "category": "Authentication & Access Control",
+                        "recommendation": "Use OAuth for authentication and ensure role-based access control to restrict API usage appropriately."
+                    },
+                    {
+                        "category": "Monitoring & Auditing",
+                        "recommendation": "Enable detailed logging for API key usage and anomalies. Perform regular security audits."
+                    }
+                ],
+                "findings_summary": f"{len(hardcoded_keys)} hardcoded secrets detected in source code. Details are provided in the detailed scores."
+            },
+            "high": [],  # Populate based on your criteria
+            "warning": [],  # Populate based on your criteria
+            "info": [],  # Populate based on your criteria
+            "secure": [],  # Populate based on your criteria
+            "hotspot": [],  # Populate based on your criteria
+            "total_trackers": json_report.get("total_trackers", 0),
+            "trackers": json_report.get("trackers", 0),
+            "security_score": json_report.get("security_score", 0),
+            "app_name": json_report.get("app_name", ""),
+            "file_name": json_report.get("file_name", ""),
+            "hash": json_report.get("hash", ""),
+            "version_name": json_report.get("version_name", ""),
+            "version": json_report.get("version", ""),
+            "title": json_report.get("title", ""),
+            "efr01": json_report.get("efr01", False)
         }
-
+        
     def find_hardcoded_keys(self, jadx_output_dir):
         """
         Analyze the decompiled source code files to find hardcoded API keys.
