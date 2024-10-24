@@ -361,6 +361,7 @@ class APKUploadView(APIView):
             "efr01": json_report.get("efr01", False)
         }
 
+
     def extract_hardcoded_keys_from_mobsf(self, json_report):
         """
         Extract hardcoded API keys from MobSF's report.
@@ -371,7 +372,7 @@ class APKUploadView(APIView):
             description = secret.get("description", "")
             matches = re.findall(r'"([^"]+)"\s*:\s*"([^"]+)"', description)
             for key, value in matches:
-                hardcoded_keys.append({"key": key, "value": value})
+                hardcoded_keys.append({"key": key, "value": value, "source": "MobSF"})
         return hardcoded_keys
 
     def find_hardcoded_keys(self, json_report, jadx_output_dir):
@@ -382,20 +383,19 @@ class APKUploadView(APIView):
         hardcoded_keys = []
 
         # Extract hardcoded secrets from MobSF JSON report
-        if "secrets" in json_report:
-            for secret in json_report["secrets"]:
-                hardcoded_keys.append({
-                    "source": "MobSF Report",
-                    "key": secret
-                })
+        mobsf_keys = self.extract_hardcoded_keys_from_mobsf(json_report)
+        hardcoded_keys.extend(mobsf_keys)
 
-        # Find hardcoded keys in JADX decompiled code
+        # Define key patterns to search for in JADX decompiled code
         key_patterns = [
             r'AIza[0-9A-Za-z-_]{35}',  # Google API Key
             r'AAAA[A-Za-z0-9_-]{7}:[A-Za-z0-9_-]{140}',  # Firebase Key
             r'pk_live_[0-9a-zA-Z]{24}',  # Stripe Live Key
+            r'password\s*=\s*["\']([^"\']+)["\']',  # Generic password assignment
+            r'username\s*=\s*["\']([^"\']+)["\']',  # Generic username assignment
         ]
 
+        # Find hardcoded keys in JADX decompiled code
         for root, dirs, files in os.walk(jadx_output_dir):
             for file in files:
                 if file.endswith(".java") or file.endswith(".xml"):
@@ -412,4 +412,27 @@ class APKUploadView(APIView):
                                         "key": match
                                     })
 
-        return hardcoded_keys
+        # Consolidate findings from both MobSF and JADX for analysis
+        consolidated_keys = self.consolidate_keys(hardcoded_keys)
+
+        return consolidated_keys
+
+    def consolidate_keys(self, hardcoded_keys):
+        """
+        Consolidate findings from MobSF and JADX to remove duplicates and provide comprehensive analysis.
+        """
+        consolidated = []
+        seen_keys = set()
+
+        for key_entry in hardcoded_keys:
+            key_identifier = (key_entry.get("key"), key_entry.get("value"))
+            if key_identifier not in seen_keys:
+                seen_keys.add(key_identifier)
+                consolidated.append(key_entry)
+            else:
+                # If duplicate found, append file paths to the existing entry for completeness
+                for item in consolidated:
+                    if item["key"] == key_entry["key"] and item["value"] == key_entry["value"]:
+                        item["file"] = f'{item.get("file", "")}, {key_entry.get("file", "")}'
+
+        return consolidated
