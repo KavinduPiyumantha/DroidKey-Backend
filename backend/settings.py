@@ -188,5 +188,10 @@ LOGGING = {
             'level': 'DEBUG',
             'propagate': True,
         },
+        'django.utils.autoreload': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',  # Change this to INFO or WARNING to filter out DEBUG messages
+            'propagate': False,
+        },
     },
 }

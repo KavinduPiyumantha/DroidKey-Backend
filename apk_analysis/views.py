@@ -11,6 +11,7 @@ import os
 import requests
 import logging
 import re
+from quark.report import Report
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -60,15 +61,38 @@ class APKUploadView(APIView):
 
         logger.info("JADX decompilation completed successfully")
 
-        # Perform security scoring and analysis
+        # Perform Quark Engine Analysis
+        quark_result = self.analyze_with_quark(abs_path)
+        if "error" in quark_result:
+            logger.error(f"Quark analysis error: {quark_result['error']}")
+            return Response(quark_result, status=status.HTTP_400_BAD_REQUEST)
+
+        logger.info("Quark analysis completed successfully")
+
+        # Perform security scoring and analysis with combined results
         try:
-            analysis_result = self.perform_security_analysis(scorecard_response, jadx_result['message'])
+            analysis_result = self.perform_security_analysis(scorecard_response, jadx_result['message'], quark_result)
         except Exception as e:
             logger.error(f"Exception during security scoring: {str(e)}")
             return Response({"error": f"Exception during security scoring: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         # Return only the analysis result
         return Response(analysis_result, status=status.HTTP_200_OK)
+
+    def analyze_with_quark(self, file_path):
+        """
+        Perform analysis using Quark Engine.
+        """
+        try:
+            report = Report()
+            rule_path = "/code/rules"  # Make sure to provide a valid path to your rule files
+            report.analysis(file_path, rule_path)
+            json_report = report.get_report("json")
+            return json_report
+        except Exception as e:
+            logger.error(f"Exception during Quark analysis: {str(e)}")
+            return {"error": f"An exception occurred during Quark analysis: {str(e)}"}
+
 
     def upload_to_mobsf(self, file_path, file_name):
         try:
@@ -171,7 +195,7 @@ class APKUploadView(APIView):
             logger.error(f"Exception during JADX decompilation: {str(e)}")
             return {"error": f"An exception occurred during decompilation: {str(e)}"}
 
-    def perform_security_analysis(self, json_report, jadx_output_dir):
+    def perform_security_analysis(self, json_report, jadx_output_dir, quark_result):
         """
         Perform a comprehensive security analysis using MobSF report and JADX output.
         Returns a detailed JSON result including each criterion's status.

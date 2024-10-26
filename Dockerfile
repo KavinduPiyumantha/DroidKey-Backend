@@ -1,26 +1,28 @@
 # Base image
-FROM python:3.10-slim
+FROM python:3.10-slim as base
 
 # Set working directory
 WORKDIR /code
 
 # Install dependencies for Java, Git, Androguard, and libssl
 RUN apt-get update && \
-    apt-get install -y wget unzip openjdk-17-jdk git libssl-dev && \
+    apt-get install -y --no-install-recommends \
+    wget unzip openjdk-17-jdk git libssl-dev && \
     rm -rf /var/lib/apt/lists/*
+
+# Copy only requirements.txt first to leverage Docker cache
+COPY requirements.txt /code/
+
+# Install Python dependencies including androguard
+RUN pip install --upgrade pip && \
+    pip install -r requirements.txt --cache-dir=/root/.cache/pip && \
+    pip install androguard quark-engine
 
 # Install JADX
 RUN wget -q https://github.com/skylot/jadx/releases/download/v1.4.4/jadx-1.4.4.zip && \
     unzip -o -q jadx-1.4.4.zip -d /opt/jadx && \
     ln -sf /opt/jadx/bin/jadx /usr/local/bin/jadx && \
     rm jadx-1.4.4.zip
-
-# Copy only requirements.txt first to leverage Docker cache
-COPY requirements.txt /code/
-
-# Install Python dependencies using cache
-RUN pip install --upgrade pip && \
-    pip install -r requirements.txt --cache-dir=/root/.cache/pip
 
 # Copy the Django application
 COPY . /code/
