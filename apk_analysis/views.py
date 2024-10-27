@@ -292,7 +292,7 @@ class APKUploadView(APIView):
 
     def perform_security_analysis(self, json_report, jadx_output_dir, quark_result):
         """
-        Perform a comprehensive security analysis using MobSF report and JADX output.
+        Perform a comprehensive security analysis using MobSF report, JADX output, and Quark Engine results.
         Returns a detailed JSON result including each criterion's status.
         """
         final_score = 0
@@ -310,107 +310,15 @@ class APKUploadView(APIView):
             "Monitoring & Auditing": 5
         }
 
-        # Perform checks for each category and calculate scores
-
-        # Mobile Device Security
-        detailed_scores["Mobile Device Security"] = {
-            "prevent_rooted_device_access": {
-                "score": 5 if json_report.get("root_detection") == "passed" else 0,
-                "status": "Passed" if json_report.get("root_detection") == "passed" else "Failed",
-                "details": "Application has root detection mechanisms implemented to prevent operation on rooted devices."
-            },
-            "disable_emulator_access": {
-                "score": 5 if json_report.get("emulator_detection") == "passed" else 0,
-                "status": "Passed" if json_report.get("emulator_detection") == "passed" else "Failed",
-                "details": "Emulator detection is in place to restrict access when running on emulators."
-            }
-        }
-
-        # Data in Transit
-        detailed_scores["Data in Transit"] = {
-            "https_enforced": {
-                "score": 5 if json_report.get("uses_https") == "yes" else 0,
-                "status": "Passed" if json_report.get("uses_https") == "yes" else "Failed",
-                "details": "HTTPS is enforced to ensure all communication is encrypted."
-            },
-            "prevent_plaintext_transmission": {
-                "score": 5 if json_report.get("prevent_plaintext_transmission") == "yes" else 0,
-                "status": "Passed" if json_report.get("prevent_plaintext_transmission") == "yes" else "Failed",
-                "details": "Sensitive data is not transmitted in plaintext, ensuring secure communication."
-            }
-        }
-
-        # Data Storage - checking both MobSF report and JADX output
-        hardcoded_keys_jadx = self.find_hardcoded_keys(json_report, jadx_output_dir)
-        hardcoded_keys_mobsf = self.extract_hardcoded_keys_from_mobsf(json_report)
-
-        detailed_scores["Data Storage"] = {
-            "encrypted_storage": {
-                "score": 5 if json_report.get("secure_storage") == "yes" else 0,
-                "status": "Passed" if json_report.get("secure_storage") == "yes" else "Failed",
-                "details": "API keys and sensitive data are stored in encrypted, secure storage."
-            },
-            "no_hardcoded_keys": {
-                "score": 5 if not hardcoded_keys_jadx and not hardcoded_keys_mobsf else 0,
-                "status": "Passed" if not hardcoded_keys_jadx and not hardcoded_keys_mobsf else "Failed",
-                "details": f"Hardcoded keys found: {hardcoded_keys_jadx + hardcoded_keys_mobsf}" if hardcoded_keys_jadx or hardcoded_keys_mobsf else "No hardcoded API keys found."
-            },
-            "backup_allowed": {
-                "score": 0 if any(item.get('title') == "Application Data can be Backed up" for item in json_report.get("warning", [])) else 5,
-                "status": "Failed" if any(item.get('title') == "Application Data can be Backed up" for item in json_report.get("warning", [])) else "Passed",
-                "details": "Application data backup is not allowed to ensure sensitive data is not easily copied."
-            }
-        }
-
-        # Cryptographic Practices
-        detailed_scores["Cryptographic Practices"] = {
-            "use_strong_encryption": {
-                "score": 5 if json_report.get("encryption_algorithm") == "AES-256" else 0,
-                "status": "Secure" if json_report.get("encryption_algorithm") == "AES-256" else "Insecure",
-                "details": "The application uses AES-256 for encryption, which is considered secure."
-            },
-            "avoid_weak_hashing": {
-                "score": 0 if any(item.get('title') in ["MD5 is a weak hash known to have hash collisions.", "SHA-1 is a weak hash known to have hash collisions."] for item in json_report.get("warning", [])) else 5,
-                "status": "Failed" if any(item.get('title') in ["MD5 is a weak hash known to have hash collisions.", "SHA-1 is a weak hash known to have hash collisions."] for item in json_report.get("warning", [])) else "Passed",
-                "details": "Avoid weak hashing algorithms like MD5 or SHA-1 which are susceptible to collisions."
-            }
-        }
-
-        # Obfuscation & Code Security
-        detailed_scores["Obfuscation & Code Security"] = {
-            "code_obfuscation": {
-                "score": 5 if json_report.get("obfuscation_enabled") == "yes" else 0,
-                "status": "Enabled" if json_report.get("obfuscation_enabled") == "yes" else "Not Enabled",
-                "details": "Code obfuscation techniques are implemented to protect against reverse engineering."
-            }
-        }
-
-        # Secure Key Management
-        detailed_scores["Secure Key Management"] = {
-            "server_side_key_management": {
-                "score": 5 if json_report.get("server_side_key_management") == "yes" else 0,
-                "status": "Passed" if json_report.get("server_side_key_management") == "yes" else "Failed",
-                "details": "API keys are managed server-side, reducing the risk of exposure."
-            }
-        }
-
-        # Authentication & Access Control
-        detailed_scores["Authentication & Access Control"] = {
-            "token_based_authentication": {
-                "score": 5 if json_report.get("token_auth") == "yes" else 0,
-                "status": "Passed" if json_report.get("token_auth") == "yes" else "Failed",
-                "details": "Token-based authentication (e.g., OAuth 2.0) is used to limit API key exposure."
-            }
-        }
-
-        # Monitoring & Auditing
-        detailed_scores["Monitoring & Auditing"] = {
-            "logging_api_key_usage": {
-                "score": 5 if json_report.get("logging_enabled") == "yes" else 0,
-                "status": "Enabled" if json_report.get("logging_enabled") == "yes" else "Not Enabled",
-                "details": "Logging is enabled to monitor API key usage and detect potential abuse."
-            }
-        }
+        # Call sub-functions for each category
+        detailed_scores["Mobile Device Security"] = self.analyze_mobile_device_security(json_report, quark_result)
+        detailed_scores["Data in Transit"] = self.analyze_data_in_transit(json_report, quark_result)
+        detailed_scores["Data Storage"] = self.analyze_data_storage(json_report, jadx_output_dir, quark_result)
+        detailed_scores["Cryptographic Practices"] = self.analyze_cryptographic_practices(json_report, quark_result)
+        detailed_scores["Obfuscation & Code Security"] = self.analyze_obfuscation_and_code_security(json_report, quark_result)
+        detailed_scores["Secure Key Management"] = self.analyze_secure_key_management(json_report, quark_result)
+        detailed_scores["Authentication & Access Control"] = self.analyze_authentication_and_access_control(json_report, quark_result)
+        detailed_scores["Monitoring & Auditing"] = self.analyze_monitoring_and_auditing(json_report, quark_result)
 
         # Calculate total score
         for category, criteria in detailed_scores.items():
@@ -427,41 +335,8 @@ class APKUploadView(APIView):
             "detailed_scores": detailed_scores,
             "detailed_explanation": {
                 "summary": "This analysis provides insights into multiple aspects of your application, including data encryption, root detection, secure storage, and hardcoded key findings.",
-                "recommendations": [
-                    {
-                        "category": "Mobile Device Security",
-                        "recommendation": "Ensure root detection and emulator detection mechanisms are in place and tested effectively."
-                    },
-                    {
-                        "category": "Data in Transit",
-                        "recommendation": "Use HTTPS with TLS 1.2 or above, avoid plaintext transmission, and implement certificate pinning to prevent MITM attacks."
-                    },
-                    {
-                        "category": "Data Storage",
-                        "recommendation": "Use secure storage solutions such as Android Keystore for storing API keys and avoid hardcoded secrets in source code."
-                    },
-                    {
-                        "category": "Cryptographic Practices",
-                        "recommendation": "Use strong encryption algorithms (AES-256 or above), avoid weak hash functions (e.g., MD5, SHA-1), and ensure keys are managed securely."
-                    },
-                    {
-                        "category": "Obfuscation & Code Security",
-                        "recommendation": "Implement ProGuard or R8 for code obfuscation and make sure debuggable flags are disabled in production."
-                    },
-                    {
-                        "category": "Secure Key Management",
-                        "recommendation": "Consider managing keys server-side using key vaults to ensure secure access and automated rotation."
-                    },
-                    {
-                        "category": "Authentication & Access Control",
-                        "recommendation": "Use OAuth for authentication and ensure role-based access control to restrict API usage appropriately."
-                    },
-                    {
-                        "category": "Monitoring & Auditing",
-                        "recommendation": "Enable detailed logging for API key usage and anomalies. Perform regular security audits."
-                    }
-                ],
-                "findings_summary": f"{len(hardcoded_keys_jadx) + len(hardcoded_keys_mobsf)} hardcoded secrets detected in source code. Details are provided in the detailed scores."
+                "recommendations": self.generate_recommendations(detailed_scores),
+                "findings_summary": f"{self.count_hardcoded_keys(detailed_scores)} hardcoded secrets detected in source code. Details are provided in the detailed scores."
             },
             "high": [],  # Populate based on your criteria
             "warning": [],  # Populate based on your criteria
@@ -480,6 +355,178 @@ class APKUploadView(APIView):
             "efr01": json_report.get("efr01", False)
         }
 
+    def analyze_mobile_device_security(self, json_report, quark_result):
+        """
+        Analyze Mobile Device Security aspects of the application using MobSF and Quark results.
+        """
+        rooted_detection = json_report.get("root_detection") == "passed" or any(
+            rule["rule_name"].lower() == "detect rooted device" and rule["behavior_occurrences"]
+            for rule in quark_result.get("rules", [])
+        )
+        emulator_detection = json_report.get("emulator_detection") == "passed" or any(
+            rule["rule_name"].lower() == "emulator detection" and rule["behavior_occurrences"]
+            for rule in quark_result.get("rules", [])
+        )
+
+        return {
+            "prevent_rooted_device_access": {
+                "score": 5 if rooted_detection else 0,
+                "status": "Passed" if rooted_detection else "Failed",
+                "details": "Application has root detection mechanisms implemented to prevent operation on rooted devices."
+            },
+            "disable_emulator_access": {
+                "score": 5 if emulator_detection else 0,
+                "status": "Passed" if emulator_detection else "Failed",
+                "details": "Emulator detection is in place to restrict access when running on emulators."
+            }
+        }
+
+    def analyze_data_in_transit(self, json_report, quark_result):
+        """
+        Analyze Data in Transit security aspects using MobSF and Quark results.
+        """
+        https_enforced = json_report.get("uses_https") == "yes" or any(
+            rule["rule_name"].lower() == "https enforcement" and rule["behavior_occurrences"]
+            for rule in quark_result.get("rules", [])
+        )
+        plaintext_transmission_prevented = json_report.get("prevent_plaintext_transmission") == "yes" or not any(
+            rule["rule_name"].lower() == "detect plaintext transmission" and rule["behavior_occurrences"]
+            for rule in quark_result.get("rules", [])
+        )
+
+        return {
+            "https_enforced": {
+                "score": 5 if https_enforced else 0,
+                "status": "Passed" if https_enforced else "Failed",
+                "details": "HTTPS is enforced to ensure all communication is encrypted."
+            },
+            "prevent_plaintext_transmission": {
+                "score": 5 if plaintext_transmission_prevented else 0,
+                "status": "Passed" if plaintext_transmission_prevented else "Failed",
+                "details": "Sensitive data is not transmitted in plaintext, ensuring secure communication."
+            }
+        }
+
+    def analyze_data_storage(self, json_report, jadx_output_dir, quark_result):
+        """
+        Analyze Data Storage aspects using MobSF, JADX, and Quark results.
+        """
+        hardcoded_keys_jadx = self.find_hardcoded_keys(json_report, jadx_output_dir)
+        hardcoded_keys_mobsf = self.extract_hardcoded_keys_from_mobsf(json_report)
+        hardcoded_keys_quark = [
+            item for rule in quark_result.get("rules", [])
+            if "hardcoded" in rule["rule_name"].lower() and rule["behavior_occurrences"]
+            for item in rule["behavior_occurrences"]
+        ]
+
+        return {
+            "encrypted_storage": {
+                "score": 5 if json_report.get("secure_storage") == "yes" else 0,
+                "status": "Passed" if json_report.get("secure_storage") == "yes" else "Failed",
+                "details": "API keys and sensitive data are stored in encrypted, secure storage."
+            },
+            "no_hardcoded_keys": {
+                "score": 5 if not hardcoded_keys_jadx and not hardcoded_keys_mobsf and not hardcoded_keys_quark else 0,
+                "status": "Passed" if not hardcoded_keys_jadx and not hardcoded_keys_mobsf and not hardcoded_keys_quark else "Failed",
+                "details": f"Hardcoded keys found: {hardcoded_keys_jadx + hardcoded_keys_mobsf + hardcoded_keys_quark}" if hardcoded_keys_jadx or hardcoded_keys_mobsf or hardcoded_keys_quark else "No hardcoded API keys found."
+            },
+            "backup_allowed": {
+                "score": 0 if any(item.get('title') == "Application Data can be Backed up" for item in json_report.get("warning", [])) else 5,
+                "status": "Failed" if any(item.get('title') == "Application Data can be Backed up" for item in json_report.get("warning", [])) else "Passed",
+                "details": "Application data backup is not allowed to ensure sensitive data is not easily copied."
+            }
+        }
+
+    def analyze_cryptographic_practices(self, json_report, quark_result):
+        """
+        Analyze Cryptographic Practices using MobSF and Quark results.
+        """
+        weak_prng_detected = any(rule["rule_name"].lower() == "use weak prng" and rule["behavior_occurrences"] for rule in quark_result.get("rules", []))
+
+        return {
+            "use_strong_encryption": {
+                "score": 5 if json_report.get("encryption_algorithm") == "AES-256" else 0,
+                "status": "Secure" if json_report.get("encryption_algorithm") == "AES-256" else "Insecure",
+                "details": "The application uses AES-256 for encryption, which is considered secure."
+            },
+            "avoid_weak_hashing": {
+                "score": 0 if any(item.get('title') in ["MD5 is a weak hash known to have hash collisions.", "SHA-1 is a weak hash known to have hash collisions."] for item in json_report.get("warning", [])) or weak_prng_detected else 5,
+                "status": "Failed" if weak_prng_detected else "Passed",
+                "details": "Avoid weak hashing algorithms like MD5 or SHA-1 which are susceptible to collisions."
+            }
+        }
+        
+    def analyze_obfuscation_and_code_security(self, json_report, quark_result):
+        """
+        Analyze Obfuscation & Code Security aspects.
+        """
+        return {
+            "code_obfuscation": {
+                "score": 5 if json_report.get("obfuscation_enabled") == "yes" else 0,
+                "status": "Enabled" if json_report.get("obfuscation_enabled") == "yes" else "Not Enabled",
+                "details": "Code obfuscation techniques are implemented to protect against reverse engineering."
+            }
+        }
+
+    def analyze_secure_key_management(self, json_report, quark_result):
+        """
+        Analyze Secure Key Management.
+        """
+        return {
+            "server_side_key_management": {
+                "score": 5 if json_report.get("server_side_key_management") == "yes" else 0,
+                "status": "Passed" if json_report.get("server_side_key_management") == "yes" else "Failed",
+                "details": "API keys are managed server-side, reducing the risk of exposure."
+            }
+        }
+
+    def analyze_authentication_and_access_control(self, json_report, quark_result):
+        """
+        Analyze Authentication & Access Control aspects.
+        """
+        return {
+            "token_based_authentication": {
+                "score": 5 if json_report.get("token_auth") == "yes" else 0,
+                "status": "Passed" if json_report.get("token_auth") == "yes" else "Failed",
+                "details": "Token-based authentication (e.g., OAuth 2.0) is used to limit API key exposure."
+            }
+        }
+
+    def analyze_monitoring_and_auditing(self, json_report, quark_result):
+        """
+        Analyze Monitoring & Auditing aspects.
+        """
+        return {
+            "logging_api_key_usage": {
+                "score": 5 if json_report.get("logging_enabled") == "yes" else 0,
+                "status": "Enabled" if json_report.get("logging_enabled") == "yes" else "Not Enabled",
+                "details": "Logging is enabled to monitor API key usage and detect potential abuse."
+            }
+        }
+
+    def generate_recommendations(self, detailed_scores):
+        """
+        Generate a list of security recommendations based on detailed scores.
+        """
+        recommendations = []
+        for category, criteria in detailed_scores.items():
+            for criterion, details in criteria.items():
+                if details['status'] == "Failed" or details['status'] == "Insecure":
+                    recommendations.append({
+                        "category": category,
+                        "recommendation": details.get('details', 'Review and improve security practices.')
+                    })
+        return recommendations
+
+    def count_hardcoded_keys(self, detailed_scores):
+        """
+        Count hardcoded keys based on detailed scores.
+        """
+        hardcoded_keys_count = 0
+        for criteria in detailed_scores.get("Data Storage", {}).values():
+            if "hardcoded keys" in criteria.get("details", "").lower():
+                hardcoded_keys_count += 1
+        return hardcoded_keys_count
 
     def extract_hardcoded_keys_from_mobsf(self, json_report):
         """
