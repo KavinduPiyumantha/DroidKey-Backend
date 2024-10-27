@@ -11,7 +11,7 @@ import os
 import requests
 import logging
 import re
-from quark.report import Report
+from quark.script import runQuarkAnalysis, Rule 
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -62,11 +62,24 @@ class APKUploadView(APIView):
         logger.info("JADX decompilation completed successfully")
 
         # Perform Quark Engine Analysis
-        quark_result = self.analyze_with_quark(abs_path)
-        if "error" in quark_result:
-            logger.error(f"Quark analysis error: {quark_result['error']}")
-            return Response(quark_result, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            if not os.path.isfile(abs_path):
+                raise FileNotFoundError(f"APK file not found for analysis: {abs_path}")
 
+            quark_result = self.analyze_with_quark(abs_path)
+            if "error" in quark_result:
+                logger.error(f"Quark analysis error: {quark_result['error']}")
+                return Response(quark_result, status=status.HTTP_400_BAD_REQUEST)
+            logger.info("Quark analysis completed successfully")
+        except FileNotFoundError as fnf_error:
+            logger.error(f"File not found error during Quark analysis: {str(fnf_error)}")
+            return Response({'error': str(fnf_error)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Exception during Quark analysis: {str(e)}")
+            return Response({'error': f'An exception occurred during Quark analysis: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+        # logger.info({quark_result})
         logger.info("Quark analysis completed successfully")
 
         # Perform security scoring and analysis with combined results
@@ -79,20 +92,102 @@ class APKUploadView(APIView):
         # Return only the analysis result
         return Response(analysis_result, status=status.HTTP_200_OK)
 
-    def analyze_with_quark(self, file_path):
+    def analyze_with_quark(self, file_path, rule_directory="/code/rules"):
         """
-        Perform analysis using Quark Engine.
+        Perform analysis using Quark Engine for each rule available in the rule directory.
+        :param file_path: Path to the APK file to be analyzed.
+        :param rule_directory: Path to the directory containing the rule JSON files.
+        :return: Dictionary containing the analysis results.
         """
+        # Function logic remains the same
         try:
-            report = Report()
-            rule_path = "/code/rules"  # Make sure to provide a valid path to your rule files
-            report.analysis(file_path, rule_path)
-            json_report = report.get_report("json")
-            return json_report
+            # Ensure the file exists and is a valid file
+            if not os.path.isfile(file_path):
+                raise FileNotFoundError(f"Provided file path is not a valid file: {file_path}")
+
+            # List to hold all rule results
+            full_analysis_result = {
+                "summary": {
+                    "total_rules": 0,
+                    "total_behaviors_detected": 0,
+                    "risk_level": "Low"  # Default risk level
+                },
+                "rules": []
+            }
+
+            # Check if rule directory is valid and exists
+            if not os.path.isdir(rule_directory):
+                raise NotADirectoryError(f"Provided rule path is not a directory: {rule_directory}")
+
+            # Iterate over all files in the rule directory and perform analysis for each rule
+            rule_files = os.listdir(rule_directory)
+            full_analysis_result["summary"]["total_rules"] = len([f for f in rule_files if f.endswith('.json')])
+
+            for rule_filename in rule_files:
+                rule_path = os.path.join(rule_directory, rule_filename)
+
+                if not rule_filename.endswith(".json"):
+                    logger.warning(f"Skipping non-JSON file in rule directory: {rule_filename}")
+                    continue
+
+                try:
+                    # Load and run the rule against the sample APK
+                    rule_instance = Rule(rule_path)
+
+                    # Verify if the rule instance is loaded correctly
+                    if not rule_instance:
+                        logger.error(f"Failed to load rule instance from: {rule_path}")
+                        continue
+
+                    quark_result = runQuarkAnalysis(file_path, rule_instance)
+
+                    # Prepare the analysis result for each rule
+                    rule_result = {
+                        "rule_name": rule_instance.crime,
+                        "rule_file": rule_filename,
+                        "behavior_occurrences": []
+                    }
+
+                    # Collect the detected behaviors from the analysis
+                    for behavior in quark_result.behaviorOccurList:
+                        behavior_data = {
+                            "methodCaller": behavior.methodCaller.fullName if behavior.methodCaller else None,
+                            "firstAPI": behavior.firstAPI.fullName if behavior.firstAPI else None,
+                            "secondAPI": behavior.secondAPI.fullName if behavior.secondAPI else None,
+                            "params": behavior.getParamValues() if behavior.getParamValues() else [],
+                        }
+                        rule_result["behavior_occurrences"].append(behavior_data)
+
+                    # Track the number of behaviors detected for this rule
+                    behavior_count = len(rule_result["behavior_occurrences"])
+                    full_analysis_result["summary"]["total_behaviors_detected"] += behavior_count
+
+                    # Update risk information if a malicious behavior is found
+                    if behavior_count > 0 and "malicious" in rule_instance.crime.lower():
+                        full_analysis_result["summary"]["risk_level"] = "High"
+
+                    # Add the rule result to the complete analysis result
+                    full_analysis_result["rules"].append(rule_result)
+
+                    logger.info(f"Analysis with rule {rule_filename} completed successfully. Detected {behavior_count} occurrences.")
+
+                except Exception as e:
+                    logger.error(f"Exception during analysis with rule {rule_filename}: {str(e)}")
+
+            # Returning JSON summary of analysis results
+            return full_analysis_result
+
+        except FileNotFoundError as fnf_error:
+            logger.error(f"File not found error during Quark analysis: {str(fnf_error)}")
+            return {"error": str(fnf_error)}
+
+        except NotADirectoryError as nd_error:
+            logger.error(f"Rule directory error during Quark analysis: {str(nd_error)}")
+            return {"error": str(nd_error)}
+
         except Exception as e:
             logger.error(f"Exception during Quark analysis: {str(e)}")
             return {"error": f"An exception occurred during Quark analysis: {str(e)}"}
-
 
     def upload_to_mobsf(self, file_path, file_name):
         try:
