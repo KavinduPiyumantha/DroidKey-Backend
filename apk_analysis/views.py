@@ -84,7 +84,7 @@ class APKUploadView(APIView):
 
         # Perform security scoring and analysis with combined results
         try:
-            analysis_result = self.perform_security_analysis(scorecard_response, jadx_result['message'], quark_result)
+            analysis_result = self.perform_security_analysis(scan_response,scorecard_response, jadx_result['message'], quark_result)
         except Exception as e:
             logger.error(f"Exception during security scoring: {str(e)}")
             return Response({"error": f"Exception during security scoring: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -290,7 +290,7 @@ class APKUploadView(APIView):
             logger.error(f"Exception during JADX decompilation: {str(e)}")
             return {"error": f"An exception occurred during decompilation: {str(e)}"}
 
-    def perform_security_analysis(self, json_report, jadx_output_dir, quark_result):
+    def perform_security_analysis(self,scan_response, scorecard_response, jadx_output_dir, quark_result):
         """
         Perform a comprehensive security analysis using MobSF report, JADX output, and Quark Engine results.
         Returns a detailed JSON result including each criterion's status.
@@ -311,14 +311,14 @@ class APKUploadView(APIView):
         }
 
         # Call sub-functions for each category
-        detailed_scores["Mobile Device Security"] = self.analyze_mobile_device_security(json_report, quark_result)
-        detailed_scores["Data in Transit"] = self.analyze_data_in_transit(json_report, quark_result)
-        detailed_scores["Data Storage"] = self.analyze_data_storage(json_report, jadx_output_dir, quark_result)
-        detailed_scores["Cryptographic Practices"] = self.analyze_cryptographic_practices(json_report, quark_result)
-        detailed_scores["Obfuscation & Code Security"] = self.analyze_obfuscation_and_code_security(json_report, quark_result)
-        detailed_scores["Secure Key Management"] = self.analyze_secure_key_management(json_report, quark_result)
-        detailed_scores["Authentication & Access Control"] = self.analyze_authentication_and_access_control(json_report, quark_result)
-        detailed_scores["Monitoring & Auditing"] = self.analyze_monitoring_and_auditing(json_report, quark_result)
+        detailed_scores["Mobile Device Security"] = self.analyze_mobile_device_security(scorecard_response,scan_response, quark_result)
+        detailed_scores["Data in Transit"] = self.analyze_data_in_transit(scorecard_response,scan_response, quark_result)
+        detailed_scores["Data Storage"] = self.analyze_data_storage(scorecard_response,scan_response, jadx_output_dir, quark_result)
+        detailed_scores["Cryptographic Practices"] = self.analyze_cryptographic_practices(scorecard_response,scan_response, quark_result)
+        detailed_scores["Obfuscation & Code Security"] = self.analyze_obfuscation_and_code_security(scorecard_response,scan_response, quark_result)
+        detailed_scores["Secure Key Management"] = self.analyze_secure_key_management(scorecard_response,scan_response, quark_result)
+        detailed_scores["Authentication & Access Control"] = self.analyze_authentication_and_access_control(scorecard_response,scan_response, quark_result)
+        detailed_scores["Monitoring & Auditing"] = self.analyze_monitoring_and_auditing(scorecard_response,scan_response, quark_result)
 
         # Calculate total score
         for category, criteria in detailed_scores.items():
@@ -343,27 +343,27 @@ class APKUploadView(APIView):
             "info": [],  # Populate based on your criteria
             "secure": [],  # Populate based on your criteria
             "hotspot": [],  # Populate based on your criteria
-            "total_trackers": json_report.get("total_trackers", 0),
-            "trackers": json_report.get("trackers", 0),
-            "security_score": json_report.get("security_score", 0),
-            "app_name": json_report.get("app_name", ""),
-            "file_name": json_report.get("file_name", ""),
-            "hash": json_report.get("hash", ""),
-            "version_name": json_report.get("version_name", ""),
-            "version": json_report.get("version", ""),
-            "title": json_report.get("title", ""),
-            "efr01": json_report.get("efr01", False)
+            "total_trackers": scorecard_response.get("total_trackers", 0),
+            "trackers": scorecard_response.get("trackers", 0),
+            "security_score": scorecard_response.get("security_score", 0),
+            "app_name": scorecard_response.get("app_name", ""),
+            "file_name": scorecard_response.get("file_name", ""),
+            "hash": scorecard_response.get("hash", ""),
+            "version_name": scorecard_response.get("version_name", ""),
+            "version": scorecard_response.get("version", ""),
+            "title": scorecard_response.get("title", ""),
+            "efr01": scorecard_response.get("efr01", False)
         }
 
-    def analyze_mobile_device_security(self, json_report, quark_result):
+    def analyze_mobile_device_security(self,scan_response, scorecard_response, quark_result):
         """
         Analyze Mobile Device Security aspects of the application using MobSF and Quark results.
         """
-        rooted_detection = json_report.get("root_detection") == "passed" or any(
+        rooted_detection = scorecard_response.get("root_detection") == "passed" or any(
             rule["rule_name"].lower() == "detect rooted device" and rule["behavior_occurrences"]
             for rule in quark_result.get("rules", [])
         )
-        emulator_detection = json_report.get("emulator_detection") == "passed" or any(
+        emulator_detection = scorecard_response.get("emulator_detection") == "passed" or any(
             rule["rule_name"].lower() == "emulator detection" and rule["behavior_occurrences"]
             for rule in quark_result.get("rules", [])
         )
@@ -381,15 +381,15 @@ class APKUploadView(APIView):
             }
         }
 
-    def analyze_data_in_transit(self, json_report, quark_result):
+    def analyze_data_in_transit(self,scan_response, scorecard_response, quark_result):
         """
         Analyze Data in Transit security aspects using MobSF and Quark results.
         """
-        https_enforced = json_report.get("uses_https") == "yes" or any(
+        https_enforced = scorecard_response.get("uses_https") == "yes" or any(
             rule["rule_name"].lower() == "https enforcement" and rule["behavior_occurrences"]
             for rule in quark_result.get("rules", [])
         )
-        plaintext_transmission_prevented = json_report.get("prevent_plaintext_transmission") == "yes" or not any(
+        plaintext_transmission_prevented = scorecard_response.get("prevent_plaintext_transmission") == "yes" or not any(
             rule["rule_name"].lower() == "detect plaintext transmission" and rule["behavior_occurrences"]
             for rule in quark_result.get("rules", [])
         )
@@ -407,12 +407,12 @@ class APKUploadView(APIView):
             }
         }
 
-    def analyze_data_storage(self, json_report, jadx_output_dir, quark_result):
+    def analyze_data_storage(self,scan_response, scorecard_response, jadx_output_dir, quark_result):
         """
         Analyze Data Storage aspects using MobSF, JADX, and Quark results.
         """
-        hardcoded_keys_jadx = self.find_hardcoded_keys(json_report, jadx_output_dir)
-        hardcoded_keys_mobsf = self.extract_hardcoded_keys_from_mobsf(json_report)
+        hardcoded_keys_jadx = self.find_hardcoded_keys(scan_response,scorecard_response, jadx_output_dir)
+        hardcoded_keys_mobsf = self.extract_hardcoded_keys_from_mobsf(scan_response,scorecard_response)
         hardcoded_keys_quark = [
             item for rule in quark_result.get("rules", [])
             if "hardcoded" in rule["rule_name"].lower() and rule["behavior_occurrences"]
@@ -421,8 +421,8 @@ class APKUploadView(APIView):
 
         return {
             "encrypted_storage": {
-                "score": 5 if json_report.get("secure_storage") == "yes" else 0,
-                "status": "Passed" if json_report.get("secure_storage") == "yes" else "Failed",
+                "score": 5 if scorecard_response.get("secure_storage") == "yes" else 0,
+                "status": "Passed" if scorecard_response.get("secure_storage") == "yes" else "Failed",
                 "details": "API keys and sensitive data are stored in encrypted, secure storage."
             },
             "no_hardcoded_keys": {
@@ -431,13 +431,13 @@ class APKUploadView(APIView):
                 "details": f"Hardcoded keys found: {hardcoded_keys_jadx + hardcoded_keys_mobsf + hardcoded_keys_quark}" if hardcoded_keys_jadx or hardcoded_keys_mobsf or hardcoded_keys_quark else "No hardcoded API keys found."
             },
             "backup_allowed": {
-                "score": 0 if any(item.get('title') == "Application Data can be Backed up" for item in json_report.get("warning", [])) else 5,
-                "status": "Failed" if any(item.get('title') == "Application Data can be Backed up" for item in json_report.get("warning", [])) else "Passed",
+                "score": 0 if any(item.get('title') == "Application Data can be Backed up" for item in scorecard_response.get("warning", [])) else 5,
+                "status": "Failed" if any(item.get('title') == "Application Data can be Backed up" for item in scorecard_response.get("warning", [])) else "Passed",
                 "details": "Application data backup is not allowed to ensure sensitive data is not easily copied."
             }
         }
 
-    def analyze_cryptographic_practices(self, json_report, quark_result):
+    def analyze_cryptographic_practices(self,scan_response, scorecard_response, quark_result):
         """
         Analyze Cryptographic Practices using MobSF and Quark results.
         """
@@ -445,61 +445,61 @@ class APKUploadView(APIView):
 
         return {
             "use_strong_encryption": {
-                "score": 5 if json_report.get("encryption_algorithm") == "AES-256" else 0,
-                "status": "Secure" if json_report.get("encryption_algorithm") == "AES-256" else "Insecure",
+                "score": 5 if scorecard_response.get("encryption_algorithm") == "AES-256" else 0,
+                "status": "Secure" if scorecard_response.get("encryption_algorithm") == "AES-256" else "Insecure",
                 "details": "The application uses AES-256 for encryption, which is considered secure."
             },
             "avoid_weak_hashing": {
-                "score": 0 if any(item.get('title') in ["MD5 is a weak hash known to have hash collisions.", "SHA-1 is a weak hash known to have hash collisions."] for item in json_report.get("warning", [])) or weak_prng_detected else 5,
+                "score": 0 if any(item.get('title') in ["MD5 is a weak hash known to have hash collisions.", "SHA-1 is a weak hash known to have hash collisions."] for item in scorecard_response.get("warning", [])) or weak_prng_detected else 5,
                 "status": "Failed" if weak_prng_detected else "Passed",
                 "details": "Avoid weak hashing algorithms like MD5 or SHA-1 which are susceptible to collisions."
             }
         }
         
-    def analyze_obfuscation_and_code_security(self, json_report, quark_result):
+    def analyze_obfuscation_and_code_security(self,scan_response, scorecard_response, quark_result):
         """
         Analyze Obfuscation & Code Security aspects.
         """
         return {
             "code_obfuscation": {
-                "score": 5 if json_report.get("obfuscation_enabled") == "yes" else 0,
-                "status": "Enabled" if json_report.get("obfuscation_enabled") == "yes" else "Not Enabled",
+                "score": 5 if scorecard_response.get("obfuscation_enabled") == "yes" else 0,
+                "status": "Enabled" if scorecard_response.get("obfuscation_enabled") == "yes" else "Not Enabled",
                 "details": "Code obfuscation techniques are implemented to protect against reverse engineering."
             }
         }
 
-    def analyze_secure_key_management(self, json_report, quark_result):
+    def analyze_secure_key_management(self,scan_response, scorecard_response, quark_result):
         """
         Analyze Secure Key Management.
         """
         return {
             "server_side_key_management": {
-                "score": 5 if json_report.get("server_side_key_management") == "yes" else 0,
-                "status": "Passed" if json_report.get("server_side_key_management") == "yes" else "Failed",
+                "score": 5 if scorecard_response.get("server_side_key_management") == "yes" else 0,
+                "status": "Passed" if scorecard_response.get("server_side_key_management") == "yes" else "Failed",
                 "details": "API keys are managed server-side, reducing the risk of exposure."
             }
         }
 
-    def analyze_authentication_and_access_control(self, json_report, quark_result):
+    def analyze_authentication_and_access_control(self, scan_response,scorecard_response, quark_result):
         """
         Analyze Authentication & Access Control aspects.
         """
         return {
             "token_based_authentication": {
-                "score": 5 if json_report.get("token_auth") == "yes" else 0,
-                "status": "Passed" if json_report.get("token_auth") == "yes" else "Failed",
+                "score": 5 if scorecard_response.get("token_auth") == "yes" else 0,
+                "status": "Passed" if scorecard_response.get("token_auth") == "yes" else "Failed",
                 "details": "Token-based authentication (e.g., OAuth 2.0) is used to limit API key exposure."
             }
         }
 
-    def analyze_monitoring_and_auditing(self, json_report, quark_result):
+    def analyze_monitoring_and_auditing(self,scan_response, scorecard_response, quark_result):
         """
         Analyze Monitoring & Auditing aspects.
         """
         return {
             "logging_api_key_usage": {
-                "score": 5 if json_report.get("logging_enabled") == "yes" else 0,
-                "status": "Enabled" if json_report.get("logging_enabled") == "yes" else "Not Enabled",
+                "score": 5 if scorecard_response.get("logging_enabled") == "yes" else 0,
+                "status": "Enabled" if scorecard_response.get("logging_enabled") == "yes" else "Not Enabled",
                 "details": "Logging is enabled to monitor API key usage and detect potential abuse."
             }
         }
@@ -528,12 +528,12 @@ class APKUploadView(APIView):
                 hardcoded_keys_count += 1
         return hardcoded_keys_count
 
-    def extract_hardcoded_keys_from_mobsf(self, json_report):
+    def extract_hardcoded_keys_from_mobsf(self, scan_response, scorecard_response):
         """
         Extract hardcoded API keys from MobSF's report.
         """
         hardcoded_keys = []
-        secrets_section = [item for item in json_report.get('warning', []) if item.get('title') == "This app may contain hardcoded secrets"]
+        secrets_section = [item for item in scorecard_response.get('warning', []) if item.get('title') == "This app may contain hardcoded secrets"]
         for secret in secrets_section:
             description = secret.get("description", "")
             matches = re.findall(r'"([^"]+)"\s*:\s*"([^"]+)"', description)
@@ -541,7 +541,7 @@ class APKUploadView(APIView):
                 hardcoded_keys.append({"key": key, "value": value, "source": "MobSF"})
         return hardcoded_keys
 
-    def find_hardcoded_keys(self, json_report, jadx_output_dir):
+    def find_hardcoded_keys(self, scan_response,scorecard_response, jadx_output_dir):
         """
         Combine MobSF JSON data and JADX output to find hardcoded API keys.
         Returns a list of detected hardcoded keys with their details.
@@ -549,7 +549,7 @@ class APKUploadView(APIView):
         hardcoded_keys = []
 
         # Extract hardcoded secrets from MobSF JSON report
-        mobsf_keys = self.extract_hardcoded_keys_from_mobsf(json_report)
+        mobsf_keys = self.extract_hardcoded_keys_from_mobsf(scorecard_response)
         hardcoded_keys.extend(mobsf_keys)
 
         # Define key patterns to search for in JADX decompiled code
