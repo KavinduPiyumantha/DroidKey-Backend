@@ -311,14 +311,14 @@ class APKUploadView(APIView):
         }
 
         # Call sub-functions for each category
-        detailed_scores["Mobile Device Security"] = self.analyze_mobile_device_security(scorecard_response,scan_response, quark_result)
-        detailed_scores["Data in Transit"] = self.analyze_data_in_transit(scorecard_response,scan_response, quark_result)
-        detailed_scores["Data Storage"] = self.analyze_data_storage(scorecard_response,scan_response, jadx_output_dir, quark_result)
-        detailed_scores["Cryptographic Practices"] = self.analyze_cryptographic_practices(scorecard_response,scan_response, quark_result)
-        detailed_scores["Obfuscation & Code Security"] = self.analyze_obfuscation_and_code_security(scorecard_response,scan_response, quark_result)
-        detailed_scores["Secure Key Management"] = self.analyze_secure_key_management(scorecard_response,scan_response, quark_result)
-        detailed_scores["Authentication & Access Control"] = self.analyze_authentication_and_access_control(scorecard_response,scan_response, quark_result)
-        detailed_scores["Monitoring & Auditing"] = self.analyze_monitoring_and_auditing(scorecard_response,scan_response, quark_result)
+        detailed_scores["Mobile Device Security"] = self.analyze_mobile_device_security(scan_response, scorecard_response, quark_result)
+        detailed_scores["Data in Transit"] = self.analyze_data_in_transit(scan_response, scorecard_response, quark_result)
+        detailed_scores["Data Storage"] = self.analyze_data_storage(scan_response, scorecard_response, jadx_output_dir, quark_result)
+        detailed_scores["Cryptographic Practices"] = self.analyze_cryptographic_practices(scan_response, scorecard_response, quark_result)
+        detailed_scores["Obfuscation & Code Security"] = self.analyze_obfuscation_and_code_security(scan_response, scorecard_response, quark_result)
+        detailed_scores["Secure Key Management"] = self.analyze_secure_key_management(scan_response, scorecard_response, quark_result)
+        detailed_scores["Authentication & Access Control"] = self.analyze_authentication_and_access_control(scan_response, scorecard_response, quark_result)
+        detailed_scores["Monitoring & Auditing"] = self.analyze_monitoring_and_auditing(scan_response, scorecard_response, quark_result)
 
         # Calculate total score
         for category, criteria in detailed_scores.items():
@@ -355,29 +355,67 @@ class APKUploadView(APIView):
             "efr01": scorecard_response.get("efr01", False)
         }
 
-    def analyze_mobile_device_security(self,scan_response, scorecard_response, quark_result):
+    def analyze_mobile_device_security(self, scan_response, scorecard_response, quark_result):
         """
-        Analyze Mobile Device Security aspects of the application using MobSF and Quark results.
+        Analyze Mobile Device Security aspects of the application using MobSF (scan and scorecard) and Quark results.
         """
-        rooted_detection = scorecard_response.get("root_detection") == "passed" or any(
+
+        # Root Detection Analysis from MobSF Scorecard - "warning" and "secure" sections
+        rooted_detection_mobsf = (
+            scorecard_response.get("root_detection") == "passed" or
+            any(
+                warning.get("title") == "This App may have root detection capabilities."
+                for warning in scorecard_response.get("warning", [])
+            ) or
+            any(
+                secure.get("title") == "This App may have root detection capabilities."
+                for secure in scorecard_response.get("secure", [])
+            )
+        )
+
+        # Root Detection Analysis from MobSF Scan (updated hierarchy)
+        rooted_detection_mobsf_scan = (
+            "android_detect_root" in scan_response.get("code_analysis", {}).get("findings", {}) and
+            scan_response["code_analysis"]["findings"]["android_detect_root"].get("files")
+        )
+
+        # Root Detection Analysis from Quark
+        rooted_detection_quark = any(
             rule["rule_name"].lower() == "detect rooted device" and rule["behavior_occurrences"]
             for rule in quark_result.get("rules", [])
         )
-        emulator_detection = scorecard_response.get("emulator_detection") == "passed" or any(
+
+        # Final Root Detection - True if detected by MobSF (scorecard or scan) or Quark
+        rooted_detection = rooted_detection_mobsf or rooted_detection_mobsf_scan or rooted_detection_quark
+
+        # Emulator Detection Analysis from MobSF Scorecard
+        emulator_detection_mobsf = scorecard_response.get("emulator_detection") == "passed"
+
+        # Emulator Detection Analysis from Quark
+        emulator_detection_quark = any(
             rule["rule_name"].lower() == "emulator detection" and rule["behavior_occurrences"]
             for rule in quark_result.get("rules", [])
         )
 
+        # Final Emulator Detection - True if detected by MobSF or Quark
+        emulator_detection = emulator_detection_mobsf or emulator_detection_quark
+
+        # Prepare the analysis result for Mobile Device Security
         return {
             "prevent_rooted_device_access": {
                 "score": 5 if rooted_detection else 0,
                 "status": "Passed" if rooted_detection else "Failed",
                 "details": "Application has root detection mechanisms implemented to prevent operation on rooted devices."
+                        f" MobSF Scorecard: {'Yes' if rooted_detection_mobsf else 'No'},"
+                        f" MobSF Scan: {'Yes' if rooted_detection_mobsf_scan else 'No'},"
+                        f" Quark: {'Yes' if rooted_detection_quark else 'No'}."
             },
             "disable_emulator_access": {
                 "score": 5 if emulator_detection else 0,
                 "status": "Passed" if emulator_detection else "Failed",
                 "details": "Emulator detection is in place to restrict access when running on emulators."
+                        f" MobSF: {'Yes' if emulator_detection_mobsf else 'No'},"
+                        f" Quark: {'Yes' if emulator_detection_quark else 'No'}."
             }
         }
 
@@ -549,7 +587,7 @@ class APKUploadView(APIView):
         hardcoded_keys = []
 
         # Extract hardcoded secrets from MobSF JSON report
-        mobsf_keys = self.extract_hardcoded_keys_from_mobsf(scorecard_response)
+        mobsf_keys = self.extract_hardcoded_keys_from_mobsf(scan_response, scorecard_response)
         hardcoded_keys.extend(mobsf_keys)
 
         # Define key patterns to search for in JADX decompiled code
