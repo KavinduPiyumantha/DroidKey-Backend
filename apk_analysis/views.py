@@ -419,31 +419,66 @@ class APKUploadView(APIView):
             }
         }
 
-    def analyze_data_in_transit(self,scan_response, scorecard_response, quark_result):
+    def analyze_data_in_transit(self, scan_response, scorecard_response, quark_result):
         """
-        Analyze Data in Transit security aspects using MobSF and Quark results.
+        Analyze Data in Transit security aspects using MobSF (scan and scorecard) and Quark results.
         """
-        https_enforced = scorecard_response.get("uses_https") == "yes" or any(
+        
+        # HTTPS Enforcement Analysis from MobSF Scorecard - "secure" section
+        https_enforced_mobsf = (
+            scorecard_response.get("uses_https") == "yes" or
+            any(
+                secure.get("title") == "This App uses SSL certificate pinning to detect or  prevent MITM attacks in secure communication channel."
+                for secure in scorecard_response.get("secure", [])
+            )
+        )
+
+        # HTTPS Enforcement Analysis from MobSF Scan (updated hierarchy)
+        https_enforced_mobsf_scan = (
+            "android_ssl_pinning" in scan_response.get("code_analysis", {}).get("findings", {}) and
+            scan_response["code_analysis"]["findings"]["android_ssl_pinning"].get("files")
+        )
+
+        # HTTPS Enforcement Analysis from Quark
+        https_enforced_quark = any(
             rule["rule_name"].lower() == "https enforcement" and rule["behavior_occurrences"]
             for rule in quark_result.get("rules", [])
         )
-        plaintext_transmission_prevented = scorecard_response.get("prevent_plaintext_transmission") == "yes" or not any(
+
+        # Final HTTPS Enforcement - True if detected by MobSF (scorecard or scan) or Quark
+        https_enforced = https_enforced_mobsf or https_enforced_mobsf_scan or https_enforced_quark
+
+        # Plaintext Transmission Prevention Analysis from MobSF Scorecard
+        plaintext_transmission_prevented_mobsf = scorecard_response.get("prevent_plaintext_transmission") == "yes"
+
+        # Plaintext Transmission Prevention Analysis from Quark
+        plaintext_transmission_prevented_quark = not any(
             rule["rule_name"].lower() == "detect plaintext transmission" and rule["behavior_occurrences"]
             for rule in quark_result.get("rules", [])
         )
 
+        # Final Plaintext Transmission Prevention - True if detected by MobSF or Quark
+        plaintext_transmission_prevented = plaintext_transmission_prevented_mobsf or plaintext_transmission_prevented_quark
+
+        # Prepare the analysis result for Data in Transit Security
         return {
             "https_enforced": {
                 "score": 5 if https_enforced else 0,
                 "status": "Passed" if https_enforced else "Failed",
                 "details": "HTTPS is enforced to ensure all communication is encrypted."
+                        f" MobSF Scorecard: {'Yes' if https_enforced_mobsf else 'No'},"
+                        f" MobSF Scan: {'Yes' if https_enforced_mobsf_scan else 'No'},"
+                        f" Quark: {'Yes' if https_enforced_quark else 'No'}."
             },
             "prevent_plaintext_transmission": {
                 "score": 5 if plaintext_transmission_prevented else 0,
                 "status": "Passed" if plaintext_transmission_prevented else "Failed",
                 "details": "Sensitive data is not transmitted in plaintext, ensuring secure communication."
+                        f" MobSF: {'Yes' if plaintext_transmission_prevented_mobsf else 'No'},"
+                        f" Quark: {'Yes' if plaintext_transmission_prevented_quark else 'No'}."
             }
         }
+
 
     def analyze_data_storage(self,scan_response, scorecard_response, jadx_output_dir, quark_result):
         """
