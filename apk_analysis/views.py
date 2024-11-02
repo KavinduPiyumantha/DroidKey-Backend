@@ -479,53 +479,120 @@ class APKUploadView(APIView):
             }
         }
 
-
-    def analyze_data_storage(self,scan_response, scorecard_response, jadx_output_dir, quark_result):
+    def analyze_data_storage(self, scan_response, scorecard_response, jadx_output_dir, quark_result):
         """
-        Analyze Data Storage aspects using MobSF, JADX, and Quark results.
+        Analyze Data Storage aspects using MobSF, JADX, and Quark results with a focus on key criteria.
         """
-        hardcoded_keys_jadx = self.find_hardcoded_keys(scan_response,scorecard_response, jadx_output_dir)
-        hardcoded_keys_mobsf = self.extract_hardcoded_keys_from_mobsf(scan_response,scorecard_response)
+        # Collect all the hardcoded secrets from scan_response, JADX, and MobSF reports
+        hardcoded_keys_scan = self.extract_secrets_from_scan_response(scan_response)
+        hardcoded_keys_jadx = self.find_hardcoded_keys(scan_response, scorecard_response, jadx_output_dir)
+        hardcoded_keys_mobsf = self.extract_hardcoded_keys_from_mobsf(scan_response, scorecard_response)
         hardcoded_keys_quark = [
             item for rule in quark_result.get("rules", [])
             if "hardcoded" in rule["rule_name"].lower() and rule["behavior_occurrences"]
             for item in rule["behavior_occurrences"]
         ]
 
+        # External Storage Usage Analysis using scorecard_response
+        external_storage_risk_mobsf = any(
+            warning.get('title') == "App can read/write to External Storage. Any App can read data written to External Storage."
+            for warning in scorecard_response.get('warning', [])
+        )
+
+        # # Secure Storage Mechanism Analysis (MobSF or Quark Results)
+        # secure_storage_mechanism_detected = scorecard_response.get("secure_storage") == "yes" or any(
+        #     rule["rule_name"].lower() == "secure storage mechanism" and rule["behavior_occurrences"]
+        #     for rule in quark_result.get("rules", [])
+        # )
+
+        # Strong Encryption for Locally Stored Data Analysis
+        encryption_algorithm = scorecard_response.get("encryption_algorithm", "").lower()
+        strong_encryption_detected = encryption_algorithm == "aes-256"  # Example of a strong encryption algorithm
+
         return {
-            "encrypted_storage": {
-                "score": 5 if scorecard_response.get("secure_storage") == "yes" else 0,
-                "status": "Passed" if scorecard_response.get("secure_storage") == "yes" else "Failed",
-                "details": "API keys and sensitive data are stored in encrypted, secure storage."
+            # # Check for the use of secure storage mechanisms like Android Keystore
+            # "use_secure_storage_mechanism": {
+            #     "score": 5 if secure_storage_mechanism_detected else 0,
+            #     "status": "Passed" if secure_storage_mechanism_detected else "Failed",
+            #     "details": "The application uses secure storage mechanisms like Android Keystore to protect API keys and sensitive data."
+            #             f" MobSF: {'Yes' if secure_storage_mechanism_detected else 'No'}."
+            # },
+            # Check to avoid storing sensitive data in external storage
+            "avoid_storing_sensitive_data_in_external_storage": {
+                "score": 5 if not external_storage_risk_mobsf else 0,
+                "status": "Passed" if not external_storage_risk_mobsf else "Failed",
+                "details": "Application does not store sensitive data in external storage, which reduces exposure risk."
+                        f" MobSF: {'Yes' if external_storage_risk_mobsf else 'No'}."
             },
+            # Check for strong encryption for locally stored data
+            "strong_encryption_for_local_storage": {
+                "score": 5 if strong_encryption_detected else 0,
+                "status": "Passed" if strong_encryption_detected else "Failed",
+                "details": f"Application uses {'strong encryption (AES-256)' if strong_encryption_detected else 'weak or no encryption'} for locally stored data."
+            },
+            # Hardcoded keys check across MobSF, JADX, and Quark, as well as scan response secrets
             "no_hardcoded_keys": {
-                "score": 5 if not hardcoded_keys_jadx and not hardcoded_keys_mobsf and not hardcoded_keys_quark else 0,
-                "status": "Passed" if not hardcoded_keys_jadx and not hardcoded_keys_mobsf and not hardcoded_keys_quark else "Failed",
-                "details": f"Hardcoded keys found: {hardcoded_keys_jadx + hardcoded_keys_mobsf + hardcoded_keys_quark}" if hardcoded_keys_jadx or hardcoded_keys_mobsf or hardcoded_keys_quark else "No hardcoded API keys found."
+                "score": 5 if not hardcoded_keys_scan and not hardcoded_keys_jadx and not hardcoded_keys_mobsf and not hardcoded_keys_quark else 0,
+                "status": "Passed" if not hardcoded_keys_scan and not hardcoded_keys_jadx and not hardcoded_keys_mobsf and not hardcoded_keys_quark else "Failed",
+                "details": f"Hardcoded keys found: {hardcoded_keys_scan + hardcoded_keys_jadx + hardcoded_keys_mobsf + hardcoded_keys_quark}" if hardcoded_keys_scan or hardcoded_keys_jadx or hardcoded_keys_mobsf or hardcoded_keys_quark else "No hardcoded API keys found."
             },
-            "backup_allowed": {
-                "score": 0 if any(item.get('title') == "Application Data can be Backed up" for item in scorecard_response.get("warning", [])) else 5,
-                "status": "Failed" if any(item.get('title') == "Application Data can be Backed up" for item in scorecard_response.get("warning", [])) else "Passed",
-                "details": "Application data backup is not allowed to ensure sensitive data is not easily copied."
+            # Rotating API keys regularly and enforcing key expiration (cannot be determined from static analysis; placeholder for integration)
+            "rotate_api_keys_regularly": {
+                "score": 0,
+                "status": "N/A",
+                "details": "API key rotation and expiration policies should be implemented. This criterion is not assessable via static analysis tools like MobSF or Quark."
             }
         }
 
-    def analyze_cryptographic_practices(self,scan_response, scorecard_response, quark_result):
+    def analyze_cryptographic_practices(self, scan_response, scorecard_response, quark_result):
         """
-        Analyze Cryptographic Practices using MobSF and Quark results.
+        Analyze Cryptographic Practices using MobSF, Scorecard, and Quark results.
         """
-        weak_prng_detected = any(rule["rule_name"].lower() == "use weak prng" and rule["behavior_occurrences"] for rule in quark_result.get("rules", []))
+        # Analyze insecure random number generator usage based on scan response, scorecard response, and Quark
+        insecure_rng_detected_scan = "android_insecure_random" in scan_response.get("code_analysis", {}).get("findings", {})
+        insecure_rng_detected_scorecard = any(
+            warning.get("title") == "The App uses an insecure Random Number Generator."
+            for warning in scorecard_response.get("warning", [])
+        )
+        insecure_rng_detected_quark = any(
+            rule["rule_name"].lower() == "use weak prng" and rule["behavior_occurrences"]
+            for rule in quark_result.get("rules", [])
+        )
+        insecure_rng_detected = insecure_rng_detected_scan or insecure_rng_detected_scorecard or insecure_rng_detected_quark
+
+        # Analyze weak hashing usage (e.g., MD5, SHA-1) from MobSF warnings
+        weak_hashing_detected_scorecard = any(
+            warning.get("title") in ["MD5 is a weak hash known to have hash collisions.", "SHA-1 is a weak hash known to have hash collisions."]
+            for warning in scorecard_response.get("warning", [])
+        )
+        weak_hashing_detected_quark = any(
+            rule["rule_name"].lower() in ["use md5", "use sha-1"] and rule["behavior_occurrences"]
+            for rule in quark_result.get("rules", [])
+        )
+        weak_hashing_detected_scan = any(
+            key == "android_md5" for key in scan_response.get("code_analysis", {}).get("findings", {})
+        )
+        weak_hashing_detected = weak_hashing_detected_scorecard or weak_hashing_detected_quark or weak_hashing_detected_scan
+
+        # Determine encryption strength (MobSF scorecard or other sources)
+        encryption_algorithm = scorecard_response.get("encryption_algorithm", "").lower()
+        strong_encryption_detected = encryption_algorithm == "aes-256"  # Example of a strong encryption algorithm
 
         return {
             "use_strong_encryption": {
-                "score": 5 if scorecard_response.get("encryption_algorithm") == "AES-256" else 0,
-                "status": "Secure" if scorecard_response.get("encryption_algorithm") == "AES-256" else "Insecure",
-                "details": "The application uses AES-256 for encryption, which is considered secure."
+                "score": 5 if strong_encryption_detected else 0,
+                "status": "Secure" if strong_encryption_detected else "Insecure",
+                "details": "The application uses AES-256 for encryption, which is considered secure." if strong_encryption_detected else "The application does not use strong encryption for local storage."
             },
             "avoid_weak_hashing": {
-                "score": 0 if any(item.get('title') in ["MD5 is a weak hash known to have hash collisions.", "SHA-1 is a weak hash known to have hash collisions."] for item in scorecard_response.get("warning", [])) or weak_prng_detected else 5,
-                "status": "Failed" if weak_prng_detected else "Passed",
-                "details": "Avoid weak hashing algorithms like MD5 or SHA-1 which are susceptible to collisions."
+                "score": 0 if weak_hashing_detected else 5,
+                "status": "Failed" if weak_hashing_detected else "Passed",
+                "details": "The application uses a weak hashing algorithm (MD5, SHA-1) which is susceptible to hash collisions." if weak_hashing_detected else "No weak hashing algorithms detected."
+            },
+            "avoid_insecure_rng": {
+                "score": 0 if insecure_rng_detected else 5,
+                "status": "Failed" if insecure_rng_detected else "Passed",
+                "details": "The application uses an insecure Random Number Generator, which is susceptible to predictability and security vulnerabilities." if insecure_rng_detected else "No insecure Random Number Generators detected."
             }
         }
         
@@ -601,6 +668,19 @@ class APKUploadView(APIView):
                 hardcoded_keys_count += 1
         return hardcoded_keys_count
 
+    def extract_secrets_from_scan_response(self, scan_response):
+        """
+        Extract hardcoded secrets from scan_response.
+        """
+        hardcoded_keys = []
+        secrets = scan_response.get("secrets", [])
+        for secret in secrets:
+            hardcoded_keys.append({
+                "source": "Scan Response",
+                "key": secret
+            })
+        return hardcoded_keys
+
     def extract_hardcoded_keys_from_mobsf(self, scan_response, scorecard_response):
         """
         Extract hardcoded API keys from MobSF's report.
@@ -614,16 +694,18 @@ class APKUploadView(APIView):
                 hardcoded_keys.append({"key": key, "value": value, "source": "MobSF"})
         return hardcoded_keys
 
-    def find_hardcoded_keys(self, scan_response,scorecard_response, jadx_output_dir):
+    def find_hardcoded_keys(self, scan_response, scorecard_response, jadx_output_dir):
         """
-        Combine MobSF JSON data and JADX output to find hardcoded API keys.
+        Combine MobSF JSON data, Scan Response data, and JADX output to find hardcoded API keys.
         Returns a list of detected hardcoded keys with their details.
         """
         hardcoded_keys = []
 
-        # Extract hardcoded secrets from MobSF JSON report
+        # Extract hardcoded secrets from MobSF JSON report and scan response
         mobsf_keys = self.extract_hardcoded_keys_from_mobsf(scan_response, scorecard_response)
+        scan_keys = self.extract_secrets_from_scan_response(scan_response)
         hardcoded_keys.extend(mobsf_keys)
+        hardcoded_keys.extend(scan_keys)
 
         # Define key patterns to search for in JADX decompiled code
         key_patterns = [
@@ -651,27 +733,27 @@ class APKUploadView(APIView):
                                         "key": match
                                     })
 
-        # Consolidate findings from both MobSF and JADX for analysis
+        # Consolidate findings from MobSF, Scan Response, and JADX for analysis
         consolidated_keys = self.consolidate_keys(hardcoded_keys)
 
         return consolidated_keys
 
     def consolidate_keys(self, hardcoded_keys):
         """
-        Consolidate findings from MobSF and JADX to remove duplicates and provide comprehensive analysis.
+        Consolidate findings from MobSF, Scan Response, and JADX to remove duplicates and provide comprehensive analysis.
         """
         consolidated = []
         seen_keys = set()
 
         for key_entry in hardcoded_keys:
-            key_identifier = (key_entry.get("key"), key_entry.get("value"))
+            key_identifier = key_entry.get("key")
             if key_identifier not in seen_keys:
                 seen_keys.add(key_identifier)
                 consolidated.append(key_entry)
             else:
                 # If duplicate found, append file paths to the existing entry for completeness
                 for item in consolidated:
-                    if item["key"] == key_entry["key"] and item["value"] == key_entry["value"]:
+                    if item["key"] == key_entry["key"]:
                         item["file"] = f'{item.get("file", "")}, {key_entry.get("file", "")}'
 
         return consolidated
