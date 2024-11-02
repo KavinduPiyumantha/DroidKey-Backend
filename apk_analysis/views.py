@@ -531,12 +531,7 @@ class APKUploadView(APIView):
                 "status": "Passed" if not hardcoded_keys_scan and not hardcoded_keys_jadx and not hardcoded_keys_mobsf and not hardcoded_keys_quark else "Failed",
                 "details": f"Hardcoded keys found: {hardcoded_keys_scan + hardcoded_keys_jadx + hardcoded_keys_mobsf + hardcoded_keys_quark}" if hardcoded_keys_scan or hardcoded_keys_jadx or hardcoded_keys_mobsf or hardcoded_keys_quark else "No hardcoded API keys found."
             },
-            # Rotating API keys regularly and enforcing key expiration (cannot be determined from static analysis; placeholder for integration)
-            "rotate_api_keys_regularly": {
-                "score": 0,
-                "status": "N/A",
-                "details": "API key rotation and expiration policies should be implemented. This criterion is not assessable via static analysis tools like MobSF or Quark."
-            }
+
         }
 
     def analyze_cryptographic_practices(self, scan_response, scorecard_response, quark_result):
@@ -691,6 +686,8 @@ class APKUploadView(APIView):
                 "source": "Scan Response",
                 "key": secret
             })
+            
+        logger.info(f"Hardcoded keys found in scan response: {hardcoded_keys}")
         return hardcoded_keys
 
     def extract_hardcoded_keys_from_mobsf(self, scan_response, scorecard_response):
