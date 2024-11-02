@@ -4,19 +4,19 @@ FROM python:3.10-slim as base
 # Set working directory
 WORKDIR /code
 
-# Install dependencies for Java, Git, Androguard, and libssl
+# Install dependencies for Java, Git, Androguard, libssl, and yara (required by APKiD)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    wget unzip openjdk-17-jdk git libssl-dev && \
+    wget unzip openjdk-17-jdk git libssl-dev libyara-dev && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy only requirements.txt first to leverage Docker cache
 COPY requirements.txt /code/
 
-# Install Python dependencies including androguard
+# Install Python dependencies including androguard and apkid
 RUN pip install --upgrade pip && \
     pip install -r requirements.txt --cache-dir=/root/.cache/pip && \
-    pip install androguard quark-engine
+    pip install androguard quark-engine apkid
 
 # Install JADX
 RUN wget -q https://github.com/skylot/jadx/releases/download/v1.4.4/jadx-1.4.4.zip && \

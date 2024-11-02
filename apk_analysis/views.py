@@ -11,6 +11,7 @@ import os
 import requests
 import logging
 import re
+import json
 from quark.script import runQuarkAnalysis, Rule 
 
 # Set up logger
@@ -84,7 +85,7 @@ class APKUploadView(APIView):
 
         # Perform security scoring and analysis with combined results
         try:
-            analysis_result = self.perform_security_analysis(scan_response,scorecard_response, jadx_result['message'], quark_result)
+            analysis_result = self.perform_security_analysis(abs_path,scan_response,scorecard_response, jadx_result['message'], quark_result)
         except Exception as e:
             logger.error(f"Exception during security scoring: {str(e)}")
             return Response({"error": f"Exception during security scoring: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -290,7 +291,7 @@ class APKUploadView(APIView):
             logger.error(f"Exception during JADX decompilation: {str(e)}")
             return {"error": f"An exception occurred during decompilation: {str(e)}"}
 
-    def perform_security_analysis(self,scan_response, scorecard_response, jadx_output_dir, quark_result):
+    def perform_security_analysis(self,abs_path,scan_response, scorecard_response, jadx_output_dir, quark_result):
         """
         Perform a comprehensive security analysis using MobSF report, JADX output, and Quark Engine results.
         Returns a detailed JSON result including each criterion's status.
@@ -315,7 +316,7 @@ class APKUploadView(APIView):
         detailed_scores["Data in Transit"] = self.analyze_data_in_transit(scan_response, scorecard_response, quark_result)
         detailed_scores["Data Storage"] = self.analyze_data_storage(scan_response, scorecard_response, jadx_output_dir, quark_result)
         detailed_scores["Cryptographic Practices"] = self.analyze_cryptographic_practices(scan_response, scorecard_response, quark_result)
-        detailed_scores["Obfuscation & Code Security"] = self.analyze_obfuscation_and_code_security(scan_response, scorecard_response, quark_result)
+        detailed_scores["Obfuscation & Code Security"] = self.analyze_obfuscation_and_code_security(abs_path, scorecard_response, quark_result)
         detailed_scores["Secure Key Management"] = self.analyze_secure_key_management(scan_response, scorecard_response, quark_result)
         detailed_scores["Authentication & Access Control"] = self.analyze_authentication_and_access_control(scan_response, scorecard_response, quark_result)
         detailed_scores["Monitoring & Auditing"] = self.analyze_monitoring_and_auditing(scan_response, scorecard_response, quark_result)
@@ -596,15 +597,53 @@ class APKUploadView(APIView):
             }
         }
         
-    def analyze_obfuscation_and_code_security(self,scan_response, scorecard_response, quark_result):
+    def analyze_obfuscation_and_code_security(self, apk_path, scorecard_response, quark_result):
         """
-        Analyze Obfuscation & Code Security aspects.
+        Analyze Obfuscation & Code Security aspects using MobSF, Quark, and APKiD results.
         """
+        obfuscation_detected = False
+        shrink_detected = False
+        apkid_result = None
+
+        try:
+            # Run APKiD on the APK file and get the output in JSON format
+            result = subprocess.run(['apkid', '-j', apk_path], capture_output=True, text=True)
+            apkid_result = json.loads(result.stdout)
+
+            # Check if obfuscation or shrink was detected in the APKiD results
+            for file_entry in apkid_result.get('files', []):
+                detections = file_entry.get('matches', {})
+                
+                # Check for "compiler" matches that indicate shrinking or obfuscation
+                if "compiler" in detections:
+                    for compiler in detections["compiler"]:
+                        if "r8" in compiler.lower() or "proguard" in compiler.lower():
+                            shrink_detected = True
+                            obfuscation_detected = True
+                
+                # Check for "anti_vm" or other detections indicating anti-analysis techniques
+                if "anti_vm" in detections:
+                    obfuscation_detected = True
+
+        except Exception as e:
+            # Handle the case if APKiD execution fails
+            print(f"Error running APKiD: {str(e)}")
+            apkid_result = {"error": str(e)}
+
+        # Use MobSF scorecard to also determine obfuscation (existing logic)
+        mobsf_obfuscation = scorecard_response.get("obfuscation_enabled") == "yes"
+        obfuscation_detected = obfuscation_detected or mobsf_obfuscation
+
         return {
             "code_obfuscation": {
-                "score": 5 if scorecard_response.get("obfuscation_enabled") == "yes" else 0,
-                "status": "Enabled" if scorecard_response.get("obfuscation_enabled") == "yes" else "Not Enabled",
-                "details": "Code obfuscation techniques are implemented to protect against reverse engineering."
+                "score": 5 if obfuscation_detected else 0,
+                "status": "Enabled" if obfuscation_detected else "Not Enabled",
+                "details": "Code obfuscation techniques are implemented to protect against reverse engineering." if obfuscation_detected else "No obfuscation techniques detected."
+            },
+            "shrink_enabled": {
+                "score": 5 if shrink_detected else 0,
+                "status": "Enabled" if shrink_detected else "Not Enabled",
+                "details": "Minification and shrinking techniques are implemented to reduce the code size and obscure functionality." if shrink_detected else "No minification or shrinking techniques detected."
             }
         }
 
