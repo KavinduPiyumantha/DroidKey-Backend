@@ -529,9 +529,8 @@ class APKUploadView(APIView):
             "no_hardcoded_keys": {
                 "score": 5 if not hardcoded_keys_scan and not hardcoded_keys_jadx and not hardcoded_keys_mobsf and not hardcoded_keys_quark else 0,
                 "status": "Passed" if not hardcoded_keys_scan and not hardcoded_keys_jadx and not hardcoded_keys_mobsf and not hardcoded_keys_quark else "Failed",
-                "details": f"Hardcoded keys found: {hardcoded_keys_scan + hardcoded_keys_jadx + hardcoded_keys_mobsf + hardcoded_keys_quark}" if hardcoded_keys_scan or hardcoded_keys_jadx or hardcoded_keys_mobsf or hardcoded_keys_quark else "No hardcoded API keys found."
+                "details": f"Hardcoded keys found: {hardcoded_keys_jadx}" if hardcoded_keys_scan or hardcoded_keys_jadx or hardcoded_keys_mobsf or hardcoded_keys_quark else "No hardcoded API keys found."
             },
-
         }
 
     def analyze_cryptographic_practices(self, scan_response, scorecard_response, quark_result):
@@ -683,11 +682,9 @@ class APKUploadView(APIView):
         secrets = scan_response.get("secrets", [])
         for secret in secrets:
             hardcoded_keys.append({
-                "source": "Scan Response",
                 "key": secret
             })
             
-        logger.info(f"Hardcoded keys found in scan response: {hardcoded_keys}")
         return hardcoded_keys
 
     def extract_hardcoded_keys_from_mobsf(self, scan_response, scorecard_response):
@@ -744,7 +741,6 @@ class APKUploadView(APIView):
 
         # Consolidate findings from MobSF, Scan Response, and JADX for analysis
         consolidated_keys = self.consolidate_keys(hardcoded_keys)
-
         return consolidated_keys
 
     def consolidate_keys(self, hardcoded_keys):
