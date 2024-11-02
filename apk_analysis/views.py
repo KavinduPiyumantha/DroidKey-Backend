@@ -303,12 +303,9 @@ class APKUploadView(APIView):
         weights = {
             "Mobile Device Security": 15,
             "Data in Transit": 20,
-            "Data Storage": 25,
+            "Data Storage": 30,
             "Cryptographic Practices": 20,
-            "Obfuscation & Code Security": 10,
-            "Secure Key Management": 5,
-            "Authentication & Access Control": 5,
-            "Monitoring & Auditing": 5
+            "Obfuscation & Code Security": 15,
         }
 
         # Call sub-functions for each category
@@ -316,10 +313,7 @@ class APKUploadView(APIView):
         detailed_scores["Data in Transit"] = self.analyze_data_in_transit(scan_response, scorecard_response, quark_result)
         detailed_scores["Data Storage"] = self.analyze_data_storage(scan_response, scorecard_response, jadx_output_dir, quark_result)
         detailed_scores["Cryptographic Practices"] = self.analyze_cryptographic_practices(scan_response, scorecard_response, quark_result)
-        detailed_scores["Obfuscation & Code Security"] = self.analyze_obfuscation_and_code_security(abs_path, scorecard_response, quark_result)
-        detailed_scores["Secure Key Management"] = self.analyze_secure_key_management(scan_response, scorecard_response, quark_result)
-        detailed_scores["Authentication & Access Control"] = self.analyze_authentication_and_access_control(scan_response, scorecard_response, quark_result)
-        detailed_scores["Monitoring & Auditing"] = self.analyze_monitoring_and_auditing(scan_response, scorecard_response, quark_result)
+        detailed_scores["Obfuscation & Code Security"] = self.analyze_obfuscation_and_code_security(abs_path,scorecard_response, scan_response,  quark_result)
 
         # Calculate total score
         for category, criteria in detailed_scores.items():
@@ -597,13 +591,14 @@ class APKUploadView(APIView):
             }
         }
         
-    def analyze_obfuscation_and_code_security(self, apk_path, scorecard_response, quark_result):
+    def analyze_obfuscation_and_code_security(self, apk_path, scorecard_response, scan_response, quark_result):
         """
-        Analyze Obfuscation & Code Security aspects using MobSF, Quark, and APKiD results.
+        Analyze Obfuscation & Code Security aspects using MobSF, Quark, APKiD results, and Scan response.
         """
         obfuscation_detected = False
         shrink_detected = False
         apkid_result = None
+        debugging_disabled = True  # Assume debugging is disabled unless detected otherwise
 
         try:
             # Run APKiD on the APK file and get the output in JSON format
@@ -613,14 +608,14 @@ class APKUploadView(APIView):
             # Check if obfuscation or shrink was detected in the APKiD results
             for file_entry in apkid_result.get('files', []):
                 detections = file_entry.get('matches', {})
-                
+
                 # Check for "compiler" matches that indicate shrinking or obfuscation
                 if "compiler" in detections:
                     for compiler in detections["compiler"]:
                         if "r8" in compiler.lower() or "proguard" in compiler.lower():
                             shrink_detected = True
                             obfuscation_detected = True
-                
+
                 # Check for "anti_vm" or other detections indicating anti-analysis techniques
                 if "anti_vm" in detections:
                     obfuscation_detected = True
@@ -634,52 +629,30 @@ class APKUploadView(APIView):
         mobsf_obfuscation = scorecard_response.get("obfuscation_enabled") == "yes"
         obfuscation_detected = obfuscation_detected or mobsf_obfuscation
 
+        # Check for debugging settings using scorecard_response
+        debug_enabled_issues = [item for item in scorecard_response.get('high', []) if item.get('title') == "Debug Enabled For App"]
+        if debug_enabled_issues:
+            debugging_disabled = False
+
+        # Ensure debugging status is returned correctly
+        debug_score = 0 if not debugging_disabled else 5
+        debug_status = "Enabled" if not debugging_disabled else "Disabled"
+        debug_details = (
+            "Debugging is enabled, which can expose the app to reverse engineering."
+            if not debugging_disabled
+            else "Debugging is disabled, which helps prevent attackers from analyzing the app behavior and extracting sensitive data."
+        )
+        
         return {
-            "code_obfuscation": {
-                "score": 5 if obfuscation_detected else 0,
-                "status": "Enabled" if obfuscation_detected else "Not Enabled",
-                "details": "Code obfuscation techniques are implemented to protect against reverse engineering." if obfuscation_detected else "No obfuscation techniques detected."
+            "code_obfuscation_and_shrink": {
+                "score": 5 if obfuscation_detected and shrink_detected else 0,
+                "status": "Enabled" if obfuscation_detected and shrink_detected else "Not Enabled",
+                "details": "Code obfuscation and shrinking techniques are implemented to protect against reverse engineering and reduce code size." if obfuscation_detected and shrink_detected else "No obfuscation or shrinking techniques detected."
             },
-            "shrink_enabled": {
-                "score": 5 if shrink_detected else 0,
-                "status": "Enabled" if shrink_detected else "Not Enabled",
-                "details": "Minification and shrinking techniques are implemented to reduce the code size and obscure functionality." if shrink_detected else "No minification or shrinking techniques detected."
-            }
-        }
-
-    def analyze_secure_key_management(self,scan_response, scorecard_response, quark_result):
-        """
-        Analyze Secure Key Management.
-        """
-        return {
-            "server_side_key_management": {
-                "score": 5 if scorecard_response.get("server_side_key_management") == "yes" else 0,
-                "status": "Passed" if scorecard_response.get("server_side_key_management") == "yes" else "Failed",
-                "details": "API keys are managed server-side, reducing the risk of exposure."
-            }
-        }
-
-    def analyze_authentication_and_access_control(self, scan_response,scorecard_response, quark_result):
-        """
-        Analyze Authentication & Access Control aspects.
-        """
-        return {
-            "token_based_authentication": {
-                "score": 5 if scorecard_response.get("token_auth") == "yes" else 0,
-                "status": "Passed" if scorecard_response.get("token_auth") == "yes" else "Failed",
-                "details": "Token-based authentication (e.g., OAuth 2.0) is used to limit API key exposure."
-            }
-        }
-
-    def analyze_monitoring_and_auditing(self,scan_response, scorecard_response, quark_result):
-        """
-        Analyze Monitoring & Auditing aspects.
-        """
-        return {
-            "logging_api_key_usage": {
-                "score": 5 if scorecard_response.get("logging_enabled") == "yes" else 0,
-                "status": "Enabled" if scorecard_response.get("logging_enabled") == "yes" else "Not Enabled",
-                "details": "Logging is enabled to monitor API key usage and detect potential abuse."
+            "disable_debugging": {
+                "score": debug_score,
+                "status": debug_status,
+                "details": debug_details
             }
         }
 
