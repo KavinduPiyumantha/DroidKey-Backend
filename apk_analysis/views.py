@@ -598,6 +598,7 @@ class APKUploadView(APIView):
             # Run APKiD on the APK file and get the output in JSON format
             result = subprocess.run(['apkid', '-j', apk_path], capture_output=True, text=True)
             apkid_result = json.loads(result.stdout)
+            logger.info(f"APKiD result: {apkid_result}")
 
             # Check if obfuscation or shrink was detected in the APKiD results
             for file_entry in apkid_result.get('files', []):
@@ -624,7 +625,7 @@ class APKUploadView(APIView):
         obfuscation_detected = obfuscation_detected or mobsf_obfuscation
 
         # Check for debugging settings using scorecard_response
-        debug_enabled_issues = [item for item in scorecard_response.get('high', []) if item.get('title') == "Debug Enabled For App"]
+        debug_enabled_issues = [item for item in scorecard_response.get('high', []) if (item.get('title') == "Debug Enabled For App" or item.get('title') == "Debug configuration enabled. Production builds must not be debuggable.")]
         if debug_enabled_issues:
             debugging_disabled = False
 
