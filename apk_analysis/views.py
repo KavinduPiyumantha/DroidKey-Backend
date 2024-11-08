@@ -479,9 +479,9 @@ class APKUploadView(APIView):
         Analyze Data Storage aspects using MobSF, JADX, and Quark results with a focus on key criteria.
         """
         # Collect all the hardcoded secrets from scan_response, JADX, and MobSF reports
-        hardcoded_keys_scan = self.extract_secrets_from_scan_response(scan_response)
+        # hardcoded_keys_scan = self.extract_secrets_from_scan_response(scan_response)
         hardcoded_keys_jadx = self.find_hardcoded_keys(scan_response, scorecard_response, jadx_output_dir)
-        hardcoded_keys_mobsf = self.extract_hardcoded_keys_from_mobsf(scan_response, scorecard_response)
+        # hardcoded_keys_mobsf = self.extract_hardcoded_keys_from_mobsf( scorecard_response)
         hardcoded_keys_quark = [
             item for rule in quark_result.get("rules", [])
             if "hardcoded" in rule["rule_name"].lower() and rule["behavior_occurrences"]
@@ -526,10 +526,15 @@ class APKUploadView(APIView):
                 "details": f"Application uses {'strong encryption (AES-256)' if strong_encryption_detected else 'weak or no encryption'} for locally stored data."
             },
             # Hardcoded keys check across MobSF, JADX, and Quark, as well as scan response secrets
-            "no_hardcoded_keys": {
-                "score": 5 if not hardcoded_keys_scan and not hardcoded_keys_jadx and not hardcoded_keys_mobsf and not hardcoded_keys_quark else 0,
-                "status": "Passed" if not hardcoded_keys_scan and not hardcoded_keys_jadx and not hardcoded_keys_mobsf and not hardcoded_keys_quark else "Failed",
-                "details": f"Hardcoded keys found: {hardcoded_keys_jadx}" if hardcoded_keys_scan or hardcoded_keys_jadx or hardcoded_keys_mobsf or hardcoded_keys_quark else "No hardcoded API keys found."
+            # "no_hardcoded_keys": {
+            #     "score": 5 if not hardcoded_keys_scan and not hardcoded_keys_jadx and not hardcoded_keys_mobsf and not hardcoded_keys_quark else 0,
+            #     "status": "Passed" if not hardcoded_keys_scan and not hardcoded_keys_jadx and not hardcoded_keys_mobsf and not hardcoded_keys_quark else "Failed",
+            #     "details": f"Hardcoded keys found: {hardcoded_keys_jadx}" if hardcoded_keys_scan or hardcoded_keys_jadx or hardcoded_keys_mobsf or hardcoded_keys_quark else "No hardcoded API keys found."
+            # },
+                        "no_hardcoded_keys": {
+                "score": 5 if not hardcoded_keys_jadx and not hardcoded_keys_quark else 0,
+                "status": "Passed" if not hardcoded_keys_jadx and not hardcoded_keys_quark else "Failed",
+                "details": f"Hardcoded keys found: {hardcoded_keys_jadx}" if hardcoded_keys_jadx or hardcoded_keys_quark else "No hardcoded API keys found."
             },
         }
 
@@ -688,18 +693,18 @@ class APKUploadView(APIView):
             
         return hardcoded_keys
 
-    def extract_hardcoded_keys_from_mobsf(self, scan_response, scorecard_response):
-        """
-        Extract hardcoded API keys from MobSF's report.
-        """
-        hardcoded_keys = []
-        secrets_section = [item for item in scorecard_response.get('warning', []) if item.get('title') == "This app may contain hardcoded secrets"]
-        for secret in secrets_section:
-            description = secret.get("description", "")
-            matches = re.findall(r'"([^"]+)"\s*:\s*"([^"]+)"', description)
-            for key, value in matches:
-                hardcoded_keys.append({"key": key, "value": value, "source": "MobSF"})
-        return hardcoded_keys
+    # def extract_hardcoded_keys_from_mobsf(self, scorecard_response):
+    #     """
+    #     Extract hardcoded API keys from MobSF's report.
+    #     """
+    #     hardcoded_keys = []
+    #     secrets_section = [item for item in scorecard_response.get('warning', []) if item.get('title') == "This app may contain hardcoded secrets"]
+    #     for secret in secrets_section:
+    #         description = secret.get("description", "")
+    #         matches = re.findall(r'"([^"]+)"\s*:\s*"([^"]+)"', description)
+    #         for key, value in matches:
+    #             hardcoded_keys.append({"key": key, "value": value, "source": "MobSF"})
+    #     return hardcoded_keys
 
     def find_hardcoded_keys(self, scan_response, scorecard_response, jadx_output_dir):
         """
@@ -709,9 +714,9 @@ class APKUploadView(APIView):
         hardcoded_keys = []
 
         # Extract hardcoded secrets from MobSF JSON report and scan response
-        mobsf_keys = self.extract_hardcoded_keys_from_mobsf(scan_response, scorecard_response)
+        # mobsf_keys = self.extract_hardcoded_keys_from_mobsf(scorecard_response)
         scan_keys = self.extract_secrets_from_scan_response(scan_response)
-        hardcoded_keys.extend(mobsf_keys)
+        # hardcoded_keys.extend(mobsf_keys)
         hardcoded_keys.extend(scan_keys)
 
         # Define key patterns to search for in JADX decompiled code
