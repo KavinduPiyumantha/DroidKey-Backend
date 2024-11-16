@@ -298,7 +298,6 @@ class APKUploadView(APIView):
             Perform a comprehensive security analysis using MobSF report, JADX output, and Quark Engine results.
             Returns a detailed JSON result including each criterion's status.
             """
-            final_score = 0
             detailed_scores = {}
 
             # Define criteria weights
@@ -331,15 +330,24 @@ class APKUploadView(APIView):
                     if 'status' not in criterion:
                         criterion['status'] = 'Unknown'
 
-            # Calculate total score
-            for criteria in detailed_scores.values():
-                for criterion in criteria.values():
-                    final_score += criterion.get('score', 0)
-
-            logger.info(f"Final score calculated: {final_score}")
-            # Normalize final score to be out of 100
+            # Calculate total weighted score
+            final_score = 0
             total_weight = sum(weights.values())
-            final_score = (final_score / (total_weight * 5)) * 100 if total_weight else 0
+            for category, criteria in detailed_scores.items():
+                category_weight = weights.get(category, 0)
+                max_category_score = len(criteria) * 5  # Assuming each criterion has a max score of 5
+                category_score = sum(criterion.get('score', 0) for criterion in criteria.values())
+                if max_category_score > 0:
+                    # Normalize category score to its weight
+                    weighted_category_score = (category_score / max_category_score) * category_weight
+                else:
+                    weighted_category_score = 0
+                final_score += weighted_category_score
+
+            logger.info(f"Final weighted score calculated: {final_score}")
+
+            # Normalize final score to be out of 100
+            final_score = (final_score / total_weight) * 100 if total_weight else 0
             logger.info(f"Security analysis COMPLETED with final score: {final_score}")
 
             # Prepare and return analysis result in JSON format
