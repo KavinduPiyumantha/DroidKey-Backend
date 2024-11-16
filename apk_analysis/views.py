@@ -426,7 +426,7 @@ class APKUploadView(APIView):
 
         # Prepare the analysis result for Mobile Device Security
         return {
-            "prevent_rooted_device_access": {
+            "Prevent Rooted Device Access": {
                 "score": 5 if rooted_detection else 0,
                 "status": "Passed" if rooted_detection else "Failed",
                 "details": "Application has root detection mechanisms implemented to prevent operation on rooted devices."
@@ -434,7 +434,7 @@ class APKUploadView(APIView):
                         f" MobSF Scan: {'Yes' if rooted_detection_mobsf_scan else 'No'},"
                         f" Quark: {'Yes' if rooted_detection_quark else 'No'}."
             },
-            "disable_emulator_access": {
+            "Disable Emulator Access": {
                 "score": 5 if emulator_detection else 0,
                 "status": "Passed" if emulator_detection else "Failed",
                 "details": "Emulator detection is in place to restrict access when running on emulators."
@@ -486,7 +486,7 @@ class APKUploadView(APIView):
 
         # Prepare the analysis result for Data in Transit Security
         return {
-            "https_enforced": {
+            "HTTPS Enforcement": {
                 "score": 5 if https_enforced else 0,
                 "status": "Passed" if https_enforced else "Failed",
                 "details": "HTTPS is enforced to ensure all communication is encrypted."
@@ -494,7 +494,7 @@ class APKUploadView(APIView):
                         f" MobSF Scan: {'Yes' if https_enforced_mobsf_scan else 'No'},"
                         f" Quark: {'Yes' if https_enforced_quark else 'No'}."
             },
-            "prevent_plaintext_transmission": {
+            "Prevent Plaintext Transmission": {
                 "score": 5 if plaintext_transmission_prevented else 0,
                 "status": "Passed" if plaintext_transmission_prevented else "Failed",
                 "details": "Sensitive data is not transmitted in plaintext, ensuring secure communication."
@@ -542,14 +542,14 @@ class APKUploadView(APIView):
             #             f" MobSF: {'Yes' if secure_storage_mechanism_detected else 'No'}."
             # },
             # Check to avoid storing sensitive data in external storage
-            "avoid_storing_sensitive_data_in_external_storage": {
+            "Avoid Storing Sensitive Data in External Storage": {
                 "score": 5 if not external_storage_risk_mobsf else 0,
                 "status": "Passed" if not external_storage_risk_mobsf else "Failed",
                 "details": "Application does not store sensitive data in external storage, which reduces exposure risk."
                         f" MobSF: {'Yes' if external_storage_risk_mobsf else 'No'}."
             },
             # Check for strong encryption for locally stored data
-            "strong_encryption_for_local_storage": {
+            "Strong Encryption for Locally Stored Data": {
                 "score": 5 if strong_encryption_detected else 0,
                 "status": "Passed" if strong_encryption_detected else "Failed",
                 "details": f"Application uses {'strong encryption (AES-256)' if strong_encryption_detected else 'weak or no encryption'} for locally stored data."
@@ -560,12 +560,12 @@ class APKUploadView(APIView):
             #     "status": "Passed" if not hardcoded_keys_scan and not hardcoded_keys_jadx and not hardcoded_keys_mobsf and not hardcoded_keys_quark else "Failed",
             #     "details": f"Hardcoded keys found: {hardcoded_keys_jadx}" if hardcoded_keys_scan or hardcoded_keys_jadx or hardcoded_keys_mobsf or hardcoded_keys_quark else "No hardcoded API keys found."
             # },
-            "no_hardcoded_keys": {
+            "No Hardcoded Keys": {
                 "score": 5 if not hardcoded_keys_jadx and not hardcoded_keys_quark else 0,
                 "status": "Passed" if not hardcoded_keys_jadx and not hardcoded_keys_quark else "Failed",
                 "details": f"Hardcoded keys found: {hardcoded_keys_jadx}" if hardcoded_keys_jadx or hardcoded_keys_quark else "No hardcoded API keys found."
             },
-            "hardcoded_keys": {
+            "Hardcoded Keys": {
                 "keys": hardcoded_keys_jadx
             },
         }
@@ -605,17 +605,17 @@ class APKUploadView(APIView):
         strong_encryption_detected = encryption_algorithm == "aes-256"  # Example of a strong encryption algorithm
 
         return {
-            "use_strong_encryption": {
+            "Use Strong Encryption": {
                 "score": 5 if strong_encryption_detected else 0,
                 "status": "Secure" if strong_encryption_detected else "Insecure",
                 "details": "The application uses AES-256 for encryption, which is considered secure." if strong_encryption_detected else "The application does not use strong encryption for local storage."
             },
-            "avoid_weak_hashing": {
+            "Avoid Weak Hashing Algorithms": {
                 "score": 0 if weak_hashing_detected else 5,
                 "status": "Failed" if weak_hashing_detected else "Passed",
                 "details": "The application uses a weak hashing algorithm (MD5, SHA-1) which is susceptible to hash collisions." if weak_hashing_detected else "No weak hashing algorithms detected."
             },
-            "avoid_insecure_rng": {
+            "Avoid Insecure Random Number Generators": {
                 "score": 0 if insecure_rng_detected else 5,
                 "status": "Failed" if insecure_rng_detected else "Passed",
                 "details": "The application uses an insecure Random Number Generator, which is susceptible to predictability and security vulnerabilities." if insecure_rng_detected else "No insecure Random Number Generators detected."
@@ -676,12 +676,12 @@ class APKUploadView(APIView):
         )
         
         return {
-            "code_obfuscation_and_shrink": {
+            "Code Obfuscation & Shrinking": {
                 "score": 5 if obfuscation_detected and shrink_detected else 0,
                 "status": "Enabled" if obfuscation_detected and shrink_detected else "Not Enabled",
                 "details": "Code obfuscation and shrinking techniques are implemented to protect against reverse engineering and reduce code size." if obfuscation_detected and shrink_detected else "No obfuscation or shrinking techniques detected."
             },
-            "disable_debugging": {
+            "Debugging Disabled": {
                 "score": debug_score,
                 "status": debug_status,
                 "details": debug_details
@@ -748,7 +748,7 @@ class APKUploadView(APIView):
         except Exception as e:
             logger.error(f"Exception during Authentication & Access Control analysis: {str(e)}")
             return {
-                "google_api_key_restrictions": {
+                "Google API Key Restrictions": {
                     "score": 0,
                     "status": "Failed",
                     "details": f"An error occurred during analysis: {str(e)}"
