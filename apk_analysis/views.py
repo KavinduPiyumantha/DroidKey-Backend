@@ -291,64 +291,85 @@ class APKUploadView(APIView):
             logger.error(f"Exception during JADX decompilation: {str(e)}")
             return {"error": f"An exception occurred during decompilation: {str(e)}"}
 
-    def perform_security_analysis(self,abs_path,scan_response, scorecard_response, jadx_output_dir, quark_result):
-        """
-        Perform a comprehensive security analysis using MobSF report, JADX output, and Quark Engine results.
-        Returns a detailed JSON result including each criterion's status.
-        """
-        final_score = 0
-        detailed_scores = {}
+    def perform_security_analysis(self, abs_path, scan_response, scorecard_response, jadx_output_dir, quark_result):
+        logger.info(f"Security analysis STARTED")
+        try:
+            """
+            Perform a comprehensive security analysis using MobSF report, JADX output, and Quark Engine results.
+            Returns a detailed JSON result including each criterion's status.
+            """
+            final_score = 0
+            detailed_scores = {}
 
-        # Define criteria weights
-        weights = {
-            "Mobile Device Security": 15,
-            "Data in Transit": 20,
-            "Data Storage": 30,
-            "Cryptographic Practices": 20,
-            "Obfuscation & Code Security": 15,
-        }
+            # Define criteria weights
+            weights = {
+                "Mobile Device Security": 15,
+                "Data in Transit": 20,
+                "Data Storage": 25,
+                "Cryptographic Practices": 20,
+                "Obfuscation & Code Security": 10,
+                "Authentication & Access Control": 10
+            }
 
-        # Call sub-functions for each category
-        detailed_scores["Mobile Device Security"] = self.analyze_mobile_device_security(scan_response, scorecard_response, quark_result)
-        detailed_scores["Data in Transit"] = self.analyze_data_in_transit(scan_response, scorecard_response, quark_result)
-        detailed_scores["Data Storage"] = self.analyze_data_storage(scan_response, scorecard_response, jadx_output_dir, quark_result)
-        detailed_scores["Cryptographic Practices"] = self.analyze_cryptographic_practices(scan_response, scorecard_response, quark_result)
-        detailed_scores["Obfuscation & Code Security"] = self.analyze_obfuscation_and_code_security(abs_path,scorecard_response, scan_response,  quark_result)
+            # Call sub-functions for each category
+            detailed_scores["Mobile Device Security"] = self.analyze_mobile_device_security(scan_response, scorecard_response, quark_result)
+            detailed_scores["Data in Transit"] = self.analyze_data_in_transit(scan_response, scorecard_response, quark_result)
+            detailed_scores["Data Storage"] = self.analyze_data_storage(scan_response, scorecard_response, jadx_output_dir, quark_result)
+            logger.info(f"Data Storage analysis COMPLETED")
+            detailed_scores["Cryptographic Practices"] = self.analyze_cryptographic_practices(scan_response, scorecard_response, quark_result)
+            detailed_scores["Obfuscation & Code Security"] = self.analyze_obfuscation_and_code_security(abs_path, scorecard_response, scan_response, quark_result)
+            # Run authentication analysis (synchronous)
+            auth_control_result = self.analyze_authentication_and_access_control(detailed_scores["Data Storage"])
+            detailed_scores["Authentication & Access Control"] = auth_control_result
 
-        # Calculate total score
-        for category, criteria in detailed_scores.items():
-            for criterion in criteria.values():
-                final_score += criterion['score']
+            logger.info(f"Mobile Device Security analysis : {detailed_scores['Mobile Device Security']}")
+            logger.info(f"Authentication & Access Control analysis : {detailed_scores['Authentication & Access Control']}")
 
-        # Normalize final score to be out of 100
-        total_weight = sum(weights.values())
-        final_score = (final_score / (total_weight * 5)) * 100 if total_weight else 0
+            # Ensure all criteria have 'status' key
+            for category, criteria in detailed_scores.items():
+                for criterion_name, criterion in criteria.items():
+                    if 'status' not in criterion:
+                        criterion['status'] = 'Unknown'
 
-        # Prepare and return analysis result in JSON format
-        return {
-            "final_score": final_score,
-            "detailed_scores": detailed_scores,
-            "detailed_explanation": {
-                "summary": "This analysis provides insights into multiple aspects of your application, including data encryption, root detection, secure storage, and hardcoded key findings.",
-                "recommendations": self.generate_recommendations(detailed_scores),
-                "findings_summary": f"{self.count_hardcoded_keys(detailed_scores)} hardcoded secrets detected in source code. Details are provided in the detailed scores."
-            },
-            "high": [],  # Populate based on your criteria
-            "warning": [],  # Populate based on your criteria
-            "info": [],  # Populate based on your criteria
-            "secure": [],  # Populate based on your criteria
-            "hotspot": [],  # Populate based on your criteria
-            "total_trackers": scorecard_response.get("total_trackers", 0),
-            "trackers": scorecard_response.get("trackers", 0),
-            "security_score": scorecard_response.get("security_score", 0),
-            "app_name": scorecard_response.get("app_name", ""),
-            "file_name": scorecard_response.get("file_name", ""),
-            "hash": scorecard_response.get("hash", ""),
-            "version_name": scorecard_response.get("version_name", ""),
-            "version": scorecard_response.get("version", ""),
-            "title": scorecard_response.get("title", ""),
-            "efr01": scorecard_response.get("efr01", False)
-        }
+            # Calculate total score
+            for criteria in detailed_scores.values():
+                for criterion in criteria.values():
+                    final_score += criterion.get('score', 0)
+
+            logger.info(f"Final score calculated: {final_score}")
+            # Normalize final score to be out of 100
+            total_weight = sum(weights.values())
+            final_score = (final_score / (total_weight * 5)) * 100 if total_weight else 0
+            logger.info(f"Security analysis COMPLETED with final score: {final_score}")
+
+            # Prepare and return analysis result in JSON format
+            return {
+                "final_score": final_score,
+                "detailed_scores": detailed_scores,
+                "detailed_explanation": {
+                    "summary": "This analysis provides insights into multiple aspects of your application, including data encryption, root detection, secure storage, and hardcoded key findings.",
+                    "recommendations": self.generate_recommendations(detailed_scores),
+                    "findings_summary": f"{self.count_hardcoded_keys(detailed_scores)} hardcoded secrets detected in source code. Details are provided in the detailed scores."
+                },
+                "high": [],  # Populate based on your criteria
+                "warning": [],  # Populate based on your criteria
+                "info": [],  # Populate based on your criteria
+                "secure": [],  # Populate based on your criteria
+                "hotspot": [],  # Populate based on your criteria
+                "total_trackers": scorecard_response.get("total_trackers", 0),
+                "trackers": scorecard_response.get("trackers", 0),
+                "security_score": scorecard_response.get("security_score", 0),
+                "app_name": scorecard_response.get("app_name", ""),
+                "file_name": scorecard_response.get("file_name", ""),
+                "hash": scorecard_response.get("hash", ""),
+                "version_name": scorecard_response.get("version_name", ""),
+                "version": scorecard_response.get("version", ""),
+                "title": scorecard_response.get("title", ""),
+                "efr01": scorecard_response.get("efr01", False)
+            }
+        except Exception as e:
+            logger.error(f"Exception during security analysis: {str(e)}")
+            return {"error": f"An exception occurred during security analysis: {str(e)}"}
 
     def analyze_mobile_device_security(self, scan_response, scorecard_response, quark_result):
         """
@@ -531,10 +552,13 @@ class APKUploadView(APIView):
             #     "status": "Passed" if not hardcoded_keys_scan and not hardcoded_keys_jadx and not hardcoded_keys_mobsf and not hardcoded_keys_quark else "Failed",
             #     "details": f"Hardcoded keys found: {hardcoded_keys_jadx}" if hardcoded_keys_scan or hardcoded_keys_jadx or hardcoded_keys_mobsf or hardcoded_keys_quark else "No hardcoded API keys found."
             # },
-                        "no_hardcoded_keys": {
+            "no_hardcoded_keys": {
                 "score": 5 if not hardcoded_keys_jadx and not hardcoded_keys_quark else 0,
                 "status": "Passed" if not hardcoded_keys_jadx and not hardcoded_keys_quark else "Failed",
                 "details": f"Hardcoded keys found: {hardcoded_keys_jadx}" if hardcoded_keys_jadx or hardcoded_keys_quark else "No hardcoded API keys found."
+            },
+            "hardcoded_keys": {
+                "keys": hardcoded_keys_jadx
             },
         }
 
@@ -655,6 +679,73 @@ class APKUploadView(APIView):
                 "details": debug_details
             }
         }
+        
+    def analyze_authentication_and_access_control(self, data_storage_results):
+        logger.info(f"Authentication & Access Control analysis STARTED")
+        """
+        Analyze Authentication & Access Control aspects using the hardcoded keys found in Data Storage analysis.
+        """
+        hardcoded_keys = data_storage_results.get("hardcoded_keys", {}).get("keys", [])
+        google_key_results = []
+
+        try:
+        
+            logger.info(f"Hardcoded keys found: {hardcoded_keys}")
+            # Validate each Google API key found
+            for key_entry in hardcoded_keys:
+                key_value = key_entry.get("key", "")
+                if re.match(r'AIza[0-9A-Za-z-_]{35}', key_value):  # Google API key pattern
+                    is_restricted = self.validate_google_api_key(key_value)
+                    logger.info(f"Validating Google API key Completed for {key_value} with is_restricted: {is_restricted}")
+                    if is_restricted is True:
+                        google_key_results.append({
+                            "key": key_value,
+                            "status": "Restricted",
+                            "details": "Restrictions are enabled for this Google API key."
+                        })
+                    elif is_restricted is False:
+                        google_key_results.append({
+                            "key": key_value,
+                            "status": "Unrestricted",
+                            "details": "Restrictions are NOT enabled for this Google API key."
+                        })
+                    else:
+                        google_key_results.append({
+                            "key": key_value,
+                            "status": "Unknown",
+                            "details": "Unable to determine if restrictions are enabled for this Google API key."
+                        })
+
+            # Check if there are any Google API keys to analyze
+            if google_key_results:
+                # If there are Google API keys analyzed, determine score and status
+                all_restricted = all(key.get("status") == "Restricted" for key in google_key_results)
+                score = 5 if all_restricted else 0
+                status = "Passed" if all_restricted else "Failed"
+            else:
+                # If there are no Google API keys, set score and status accordingly
+                score = 0
+                status = "No Keys Found"
+
+            # Generate results for Authentication & Access Control
+            logger.info(f"Authentication & Access Control analysis COMPLETED")
+            return {
+                "google_api_key_restrictions": {
+                    "score": score,
+                    "status": status,
+                    "details": google_key_results if google_key_results else "No Google API keys found for analysis."
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Exception during Authentication & Access Control analysis: {str(e)}")
+            return {
+                "google_api_key_restrictions": {
+                    "score": 0,
+                    "status": "Failed",
+                    "details": f"An error occurred during analysis: {str(e)}"
+                }
+            }
 
     def generate_recommendations(self, detailed_scores):
         """
@@ -746,6 +837,7 @@ class APKUploadView(APIView):
                                     })
 
         # Consolidate findings from MobSF, Scan Response, and JADX for analysis
+        logger.info(f"Hardcoded keys found: {hardcoded_keys}")
         consolidated_keys = self.consolidate_keys(hardcoded_keys)
         return consolidated_keys
 
@@ -754,17 +846,71 @@ class APKUploadView(APIView):
         Consolidate findings from MobSF, Scan Response, and JADX to remove duplicates and provide comprehensive analysis.
         """
         consolidated = []
-        seen_keys = set()
+        seen_keys = {}
 
         for key_entry in hardcoded_keys:
-            key_identifier = key_entry.get("key")
-            if key_identifier not in seen_keys:
-                seen_keys.add(key_identifier)
-                consolidated.append(key_entry)
+            key_str = key_entry.get("key")
+            
+            # Extract only the value from the key string
+            if ":" in key_str:
+                key_value = key_str.split(":", 1)[1].strip().strip('"').strip("'")
             else:
-                # If duplicate found, append file paths to the existing entry for completeness
-                for item in consolidated:
-                    if item["key"] == key_entry["key"]:
-                        item["file"] = f'{item.get("file", "")}, {key_entry.get("file", "")}'
+                key_value = key_str.strip().strip('"').strip("'")
+
+            # Check if this key has been seen before
+            if key_value not in seen_keys:
+                # Add the key to seen_keys and consolidated list
+                seen_keys[key_value] = {
+                    "key": key_value,
+                    "file": key_entry.get("file", "")
+                }
+                consolidated.append(seen_keys[key_value])
+            else:
+                # If the key already exists, append file paths for completeness
+                existing_entry = seen_keys[key_value]
+                existing_entry["file"] = f'{existing_entry.get("file", "")}, {key_entry.get("file", "")}'
 
         return consolidated
+    
+    def validate_google_api_key(self, api_key):
+        logger.info(f"Validating Google API key STARTED for key: {api_key}")
+        """
+        Check if Google API key is restricted or not.
+        :param api_key: The Google API key to be validated.
+        :return: Boolean indicating if the key has restrictions enabled.
+        """
+        try:
+            # Using Google Maps Geocode API to test the API key
+            url = f"https://maps.googleapis.com/maps/api/geocode/json?address=12,+bond+street,+Ringwood,+VICTORIA,+postcode,+AUSTRALIA&key={api_key}"
+            
+            # Send request to Google Maps Geocode API to validate the key
+            response = requests.get(url, timeout=10)  # Set a timeout to avoid hanging indefinitely
+            response_data = response.json()
+
+            # Check for the response status
+            if response.status_code == 200:
+                # Determine if restrictions are enabled based on the response
+                if response_data.get('status') == "REQUEST_DENIED" and "not authorized" in response_data.get("error_message", "").lower():
+                    logger.info(f"API key {api_key} is restricted.")
+                    return True  # Restrictions are enabled
+                elif response_data.get('status') == "OK":
+                    logger.info(f"API key {api_key} is unrestricted.")
+                    return False  # Restrictions are not enabled
+                else:
+                    # Handle other cases such as limit exceeded or other request issues
+                    logger.warning(f"Unexpected response while validating Google API key: {response_data}")
+                    return None
+            else:
+                # Handle error cases
+                logger.error(f"Failed to validate Google API key. Status code: {response.status_code}, Response: {response.text}")
+                return None
+
+        except requests.exceptions.Timeout as e:
+            logger.error(f"Timeout error while validating Google API key: {str(e)}")
+            return None
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network-related error while validating Google API key: {str(e)}")
+            return None
+        except Exception as e:
+            logger.error(f"Exception occurred while validating Google API key: {str(e)}")
+            return None
