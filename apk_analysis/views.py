@@ -430,16 +430,16 @@ class APKUploadView(APIView):
                 "score": 5 if rooted_detection else 0,
                 "status": "Passed" if rooted_detection else "Failed",
                 "details": "Application has root detection mechanisms implemented to prevent operation on rooted devices."
-                        f" MobSF Scorecard: {'Yes' if rooted_detection_mobsf else 'No'},"
-                        f" MobSF Scan: {'Yes' if rooted_detection_mobsf_scan else 'No'},"
-                        f" Quark: {'Yes' if rooted_detection_quark else 'No'}."
+                        # f" MobSF Scorecard: {'Yes' if rooted_detection_mobsf else 'No'},"
+                        # f" MobSF Scan: {'Yes' if rooted_detection_mobsf_scan else 'No'},"
+                        # f" Quark: {'Yes' if rooted_detection_quark else 'No'}."
             },
             "Disable Emulator Access": {
                 "score": 5 if emulator_detection else 0,
                 "status": "Passed" if emulator_detection else "Failed",
                 "details": "Emulator detection is in place to restrict access when running on emulators."
-                        f" MobSF: {'Yes' if emulator_detection_mobsf else 'No'},"
-                        f" Quark: {'Yes' if emulator_detection_quark else 'No'}."
+                        # f" MobSF: {'Yes' if emulator_detection_mobsf else 'No'},"
+                        # f" Quark: {'Yes' if emulator_detection_quark else 'No'}."
             }
         }
 
@@ -490,16 +490,16 @@ class APKUploadView(APIView):
                 "score": 5 if https_enforced else 0,
                 "status": "Passed" if https_enforced else "Failed",
                 "details": "HTTPS is enforced to ensure all communication is encrypted."
-                        f" MobSF Scorecard: {'Yes' if https_enforced_mobsf else 'No'},"
-                        f" MobSF Scan: {'Yes' if https_enforced_mobsf_scan else 'No'},"
-                        f" Quark: {'Yes' if https_enforced_quark else 'No'}."
+                        # f" MobSF Scorecard: {'Yes' if https_enforced_mobsf else 'No'},"
+                        # f" MobSF Scan: {'Yes' if https_enforced_mobsf_scan else 'No'},"
+                        # f" Quark: {'Yes' if https_enforced_quark else 'No'}."
             },
             "Prevent Plaintext Transmission": {
                 "score": 5 if plaintext_transmission_prevented else 0,
                 "status": "Passed" if plaintext_transmission_prevented else "Failed",
                 "details": "Sensitive data is not transmitted in plaintext, ensuring secure communication."
-                        f" MobSF: {'Yes' if plaintext_transmission_prevented_mobsf else 'No'},"
-                        f" Quark: {'Yes' if plaintext_transmission_prevented_quark else 'No'}."
+                        # f" MobSF: {'Yes' if plaintext_transmission_prevented_mobsf else 'No'},"
+                        # f" Quark: {'Yes' if plaintext_transmission_prevented_quark else 'No'}."
             }
         }
 
@@ -546,7 +546,7 @@ class APKUploadView(APIView):
                 "score": 5 if not external_storage_risk_mobsf else 0,
                 "status": "Passed" if not external_storage_risk_mobsf else "Failed",
                 "details": "Application does not store sensitive data in external storage, which reduces exposure risk."
-                        f" MobSF: {'Yes' if external_storage_risk_mobsf else 'No'}."
+                        # f" MobSF: {'Yes' if external_storage_risk_mobsf else 'No'}."
             },
             # Check for strong encryption for locally stored data
             "Strong Encryption for Locally Stored Data": {
@@ -738,7 +738,7 @@ class APKUploadView(APIView):
             # Generate results for Authentication & Access Control
             logger.info(f"Authentication & Access Control analysis COMPLETED")
             return {
-                "google_api_key_restrictions": {
+                "Google API Key Restrictions": {
                     "score": score,
                     "status": status,
                     "details": google_key_results if google_key_results else "No Google API keys found for analysis."
