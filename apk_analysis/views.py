@@ -434,13 +434,13 @@ class APKUploadView(APIView):
                         # f" MobSF Scan: {'Yes' if rooted_detection_mobsf_scan else 'No'},"
                         # f" Quark: {'Yes' if rooted_detection_quark else 'No'}."
             },
-            "Disable Emulator Access": {
-                "score": 5 if emulator_detection else 0,
-                "status": "Passed" if emulator_detection else "Failed",
-                "details": "Emulator detection is in place to restrict access when running on emulators."
-                        # f" MobSF: {'Yes' if emulator_detection_mobsf else 'No'},"
-                        # f" Quark: {'Yes' if emulator_detection_quark else 'No'}."
-            }
+            # "Disable Emulator Access": {
+            #     "score": 5 if emulator_detection else 0,
+            #     "status": "Passed" if emulator_detection else "Failed",
+            #     "details": "Emulator detection is in place to restrict access when running on emulators."
+            #             # f" MobSF: {'Yes' if emulator_detection_mobsf else 'No'},"
+            #             # f" Quark: {'Yes' if emulator_detection_quark else 'No'}."
+            # }
         }
 
     def analyze_data_in_transit(self, scan_response, scorecard_response, quark_result):
@@ -730,7 +730,7 @@ class APKUploadView(APIView):
                 status = "Passed" if all_restricted else "Failed"
             else:
                 # If there are no Google API keys, set score and status accordingly
-                score = 0
+                score = 5
                 status = "No Keys Found"
 
             # Generate results for Authentication & Access Control
