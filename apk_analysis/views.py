@@ -563,11 +563,10 @@ class APKUploadView(APIView):
             "No Hardcoded Keys": {
                 "score": 5 if not hardcoded_keys_jadx and not hardcoded_keys_quark else 0,
                 "status": "Passed" if not hardcoded_keys_jadx and not hardcoded_keys_quark else "Failed",
-                "details": f"Hardcoded keys found: {hardcoded_keys_jadx}" if hardcoded_keys_jadx or hardcoded_keys_quark else "No hardcoded API keys found."
-            },
-            "Hardcoded Keys": {
+                "details": f"Hardcoded keys found:" if hardcoded_keys_jadx or hardcoded_keys_quark else "No hardcoded API keys found.",
                 "keys": hardcoded_keys_jadx
             },
+            
         }
 
     def analyze_cryptographic_practices(self, scan_response, scorecard_response, quark_result):
@@ -693,16 +692,15 @@ class APKUploadView(APIView):
         """
         Analyze Authentication & Access Control aspects using the hardcoded keys found in Data Storage analysis.
         """
-        hardcoded_keys = data_storage_results.get("hardcoded_keys", {}).get("keys", [])
+        hardcoded_keys = data_storage_results.get("No Hardcoded Keys", {}).get("keys", [])
         google_key_results = []
 
         try:
-        
             logger.info(f"Hardcoded keys found: {hardcoded_keys}")
             # Validate each Google API key found
             for key_entry in hardcoded_keys:
                 key_value = key_entry.get("key", "")
-                if re.match(r'AIza[0-9A-Za-z-_]{35}', key_value):  # Google API key pattern
+                if re.match(r'AIza[0-9A-Za-z-_]{35}', key_value):
                     is_restricted = self.validate_google_api_key(key_value)
                     logger.info(f"Validating Google API key Completed for {key_value} with is_restricted: {is_restricted}")
                     if is_restricted is True:
