@@ -72,6 +72,7 @@ class APKUploadView(APIView):
                 logger.error(f"Quark analysis error: {quark_result['error']}")
                 return Response(quark_result, status=status.HTTP_400_BAD_REQUEST)
             logger.info("Quark analysis completed successfully")
+            logger.info(f"Quark result: {quark_result}")
         except FileNotFoundError as fnf_error:
             logger.error(f"File not found error during Quark analysis: {str(fnf_error)}")
             return Response({'error': str(fnf_error)}, status=status.HTTP_400_BAD_REQUEST)
@@ -760,13 +761,56 @@ class APKUploadView(APIView):
         recommendations = []
         for category, criteria in detailed_scores.items():
             for criterion, details in criteria.items():
-                if details['status'] == "Failed" or details['status'] == "Insecure":
+                if details['status'] in ["Failed", "Insecure"]:
+                    # Provide detailed recommendation based on criterion
+                    if category == "Mobile Device Security":
+                        if criterion == "Prevent Rooted Device Access":
+                            recommendation = "Implement root detection mechanisms to prevent the app from running on rooted or jailbroken devices."
+                        else:
+                            recommendation = "Review and improve security practices related to mobile device security."
+                    elif category == "Data in Transit":
+                        if criterion == "HTTPS Enforcement":
+                            recommendation = "Ensure that all network communication uses HTTPS to protect data in transit."
+                        elif criterion == "Prevent Plaintext Transmission":
+                            recommendation = "Avoid transmitting sensitive data in plaintext; use encryption protocols instead."
+                        else:
+                            recommendation = "Review and improve data in transit security practices."
+                    elif category == "Data Storage":
+                        if criterion == "Avoid Storing Sensitive Data in External Storage":
+                            recommendation = "Refrain from storing sensitive data on external storage where it can be accessed by other apps."
+                        elif criterion == "Strong Encryption for Locally Stored Data":
+                            recommendation = "Use strong encryption algorithms like AES-256 to secure locally stored data."
+                        elif criterion == "No Hardcoded Keys":
+                            recommendation = "Remove hardcoded keys from the source code and retrieve them securely at runtime."
+                        else:
+                            recommendation = "Review and improve data storage security practices."
+                    elif category == "Cryptographic Practices":
+                        if criterion == "Use Strong Encryption":
+                            recommendation = "Ensure that strong encryption algorithms are used for all cryptographic operations."
+                        elif criterion == "Avoid Weak Hashing Algorithms":
+                            recommendation = "Replace weak hashing algorithms like MD5 or SHA-1 with stronger ones like SHA-256."
+                        elif criterion == "Avoid Insecure Random Number Generators":
+                            recommendation = "Use secure random number generators provided by the platform's security library."
+                        else:
+                            recommendation = "Review and improve cryptographic practices."
+                    elif category == "Obfuscation & Code Security":
+                        recommendation = "Review and improve obfuscation and code security practices."
+                    elif category == "Authentication & Access Control":
+                        if criterion == "Google API Key Restrictions":
+                            recommendation = "Restrict Google API keys to authorized domains or IP addresses to prevent unauthorized use."
+                        else:
+                            recommendation = "Review and improve authentication and access control practices."
+                    else:
+                        recommendation = "Review and improve security practices."
+
                     recommendations.append({
                         "category": category,
-                        "recommendation": details.get('details', 'Review and improve security practices.')
+                        "criterion": criterion,
+                        "recommendation": recommendation
                     })
-        return recommendations
 
+        return recommendations
+    
     def count_hardcoded_keys(self, detailed_scores):
         """
         Count hardcoded keys based on detailed scores.
