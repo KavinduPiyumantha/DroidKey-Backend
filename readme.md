@@ -69,11 +69,7 @@ If you prefer to run the project without Docker:
 
 2. **Set Environment Variables**:
 
-   - Create a
-
-.env
-
-file or set the following environment variables:
+   - Create a .env file or set the following environment variables:
 
      ```env
      MOBSF_API_KEY=your_mobsf_api_key
@@ -236,33 +232,18 @@ The response will include the analysis results, including security scores and de
 
 ## Project Structure
 
-- \*\*
+- **apk_analysis**: Contains the Django app for APK analysis.
 
-apk_analysis
+  - **`views.py`**: Core logic for handling APK uploads and analysis.
+  - **`models.py`**: Database models for storing analysis results.
+  - **`serializers.py`**: Serializers for converting data to/from JSON.
+  - **`urls.py`**: URL configurations for the APK analysis app.
 
-\*\*: Contains the Django app for APK analysis.
+- **rules**: Contains Quark Engine rules for detecting specific behaviors.
 
-- **`views.py`**: Core logic for handling APK uploads and analysis.
-- **`models.py`**: Database models for storing analysis results.
-- **`serializers.py`**: Serializers for converting data to/from JSON.
-- **`urls.py`**: URL configurations for the APK analysis app.
-- \*\*
+- **media**: Directory where uploaded APKs and analysis results are stored.
 
-rules
-
-\*\*: Contains Quark Engine rules for detecting specific behaviors.
-
-- \*\*
-
-media
-
-\*\*: Directory where uploaded APKs and analysis results are stored.
-
-- \*\*
-
-Dockerfile
-
-\*\*: Defines the Docker image for the Django application.
+- **Dockerfile**: Defines the Docker image for the Django application.
 
 - **`docker-compose.yml`**: Orchestrates multiple services using Docker Compose.
 - **`requirements.txt`**: Lists Python dependencies.
