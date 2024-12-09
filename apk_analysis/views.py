@@ -72,6 +72,7 @@ class APKUploadView(APIView):
                 logger.error(f"Quark analysis error: {quark_result['error']}")
                 return Response(quark_result, status=status.HTTP_400_BAD_REQUEST)
             logger.info("Quark analysis completed successfully")
+            logger.info(f"Quark result: {quark_result}")
         except FileNotFoundError as fnf_error:
             logger.error(f"File not found error during Quark analysis: {str(fnf_error)}")
             return Response({'error': str(fnf_error)}, status=status.HTTP_400_BAD_REQUEST)
@@ -291,64 +292,93 @@ class APKUploadView(APIView):
             logger.error(f"Exception during JADX decompilation: {str(e)}")
             return {"error": f"An exception occurred during decompilation: {str(e)}"}
 
-    def perform_security_analysis(self,abs_path,scan_response, scorecard_response, jadx_output_dir, quark_result):
-        """
-        Perform a comprehensive security analysis using MobSF report, JADX output, and Quark Engine results.
-        Returns a detailed JSON result including each criterion's status.
-        """
-        final_score = 0
-        detailed_scores = {}
+    def perform_security_analysis(self, abs_path, scan_response, scorecard_response, jadx_output_dir, quark_result):
+        logger.info(f"Security analysis STARTED")
+        try:
+            """
+            Perform a comprehensive security analysis using MobSF report, JADX output, and Quark Engine results.
+            Returns a detailed JSON result including each criterion's status.
+            """
+            detailed_scores = {}
 
-        # Define criteria weights
-        weights = {
-            "Mobile Device Security": 15,
-            "Data in Transit": 20,
-            "Data Storage": 30,
-            "Cryptographic Practices": 20,
-            "Obfuscation & Code Security": 15,
-        }
+            # Define criteria weights
+            weights = {
+                "Mobile Device Security": 15,
+                "Data in Transit": 20,
+                "Data Storage": 25,
+                "Cryptographic Practices": 20,
+                "Obfuscation & Code Security": 10,
+                "Authentication & Access Control": 10
+            }
 
-        # Call sub-functions for each category
-        detailed_scores["Mobile Device Security"] = self.analyze_mobile_device_security(scan_response, scorecard_response, quark_result)
-        detailed_scores["Data in Transit"] = self.analyze_data_in_transit(scan_response, scorecard_response, quark_result)
-        detailed_scores["Data Storage"] = self.analyze_data_storage(scan_response, scorecard_response, jadx_output_dir, quark_result)
-        detailed_scores["Cryptographic Practices"] = self.analyze_cryptographic_practices(scan_response, scorecard_response, quark_result)
-        detailed_scores["Obfuscation & Code Security"] = self.analyze_obfuscation_and_code_security(abs_path,scorecard_response, scan_response,  quark_result)
+            # Call sub-functions for each category
+            detailed_scores["Mobile Device Security"] = self.analyze_mobile_device_security(scan_response, scorecard_response, quark_result)
+            detailed_scores["Data in Transit"] = self.analyze_data_in_transit(scan_response, scorecard_response, quark_result)
+            detailed_scores["Data Storage"] = self.analyze_data_storage(scan_response, scorecard_response, jadx_output_dir, quark_result)
+            logger.info(f"Data Storage analysis COMPLETED")
+            detailed_scores["Cryptographic Practices"] = self.analyze_cryptographic_practices(scan_response, scorecard_response, quark_result)
+            detailed_scores["Obfuscation & Code Security"] = self.analyze_obfuscation_and_code_security(abs_path, scorecard_response, scan_response, quark_result)
+            # Run authentication analysis (synchronous)
+            auth_control_result = self.analyze_authentication_and_access_control(detailed_scores["Data Storage"])
+            detailed_scores["Authentication & Access Control"] = auth_control_result
 
-        # Calculate total score
-        for category, criteria in detailed_scores.items():
-            for criterion in criteria.values():
-                final_score += criterion['score']
+            logger.info(f"Mobile Device Security analysis : {detailed_scores['Mobile Device Security']}")
+            logger.info(f"Authentication & Access Control analysis : {detailed_scores['Authentication & Access Control']}")
 
-        # Normalize final score to be out of 100
-        total_weight = sum(weights.values())
-        final_score = (final_score / (total_weight * 5)) * 100 if total_weight else 0
+            # Ensure all criteria have 'status' key
+            for category, criteria in detailed_scores.items():
+                for criterion_name, criterion in criteria.items():
+                    if 'status' not in criterion:
+                        criterion['status'] = 'Unknown'
 
-        # Prepare and return analysis result in JSON format
-        return {
-            "final_score": final_score,
-            "detailed_scores": detailed_scores,
-            "detailed_explanation": {
-                "summary": "This analysis provides insights into multiple aspects of your application, including data encryption, root detection, secure storage, and hardcoded key findings.",
-                "recommendations": self.generate_recommendations(detailed_scores),
-                "findings_summary": f"{self.count_hardcoded_keys(detailed_scores)} hardcoded secrets detected in source code. Details are provided in the detailed scores."
-            },
-            "high": [],  # Populate based on your criteria
-            "warning": [],  # Populate based on your criteria
-            "info": [],  # Populate based on your criteria
-            "secure": [],  # Populate based on your criteria
-            "hotspot": [],  # Populate based on your criteria
-            "total_trackers": scorecard_response.get("total_trackers", 0),
-            "trackers": scorecard_response.get("trackers", 0),
-            "security_score": scorecard_response.get("security_score", 0),
-            "app_name": scorecard_response.get("app_name", ""),
-            "file_name": scorecard_response.get("file_name", ""),
-            "hash": scorecard_response.get("hash", ""),
-            "version_name": scorecard_response.get("version_name", ""),
-            "version": scorecard_response.get("version", ""),
-            "title": scorecard_response.get("title", ""),
-            "efr01": scorecard_response.get("efr01", False)
-        }
+            # Calculate total weighted score
+            final_score = 0
+            total_weight = sum(weights.values())
+            for category, criteria in detailed_scores.items():
+                category_weight = weights.get(category, 0)
+                max_category_score = len(criteria) * 5  # Assuming each criterion has a max score of 5
+                category_score = sum(criterion.get('score', 0) for criterion in criteria.values())
+                if max_category_score > 0:
+                    # Normalize category score to its weight
+                    weighted_category_score = (category_score / max_category_score) * category_weight
+                else:
+                    weighted_category_score = 0
+                final_score += weighted_category_score
+
+            logger.info(f"Final weighted score calculated: {final_score}")
+
+            # Normalize final score to be out of 100
+            final_score = (final_score / total_weight) * 100 if total_weight else 0
+            logger.info(f"Security analysis COMPLETED with final score: {final_score}")
+
+            # Prepare and return analysis result in JSON format
+            return {
+                "final_score": final_score,
+                "detailed_scores": detailed_scores,
+                "detailed_explanation": {
+                    "summary": "This analysis provides insights into multiple aspects of your application, including data encryption, root detection, secure storage, and hardcoded key findings.",
+                    "recommendations": self.generate_recommendations(detailed_scores),
+                    "findings_summary": f"{self.count_hardcoded_keys(detailed_scores)} hardcoded secrets detected in source code. Details are provided in the detailed scores."
+                },
+                "high": [],  # Populate based on your criteria
+                "warning": [],  # Populate based on your criteria
+                "info": [],  # Populate based on your criteria
+                "secure": [],  # Populate based on your criteria
+                "hotspot": [],  # Populate based on your criteria
+                "total_trackers": scorecard_response.get("total_trackers", 0),
+                "trackers": scorecard_response.get("trackers", 0),
+                "security_score": scorecard_response.get("security_score", 0),
+                "app_name": scorecard_response.get("app_name", ""),
+                "file_name": scorecard_response.get("file_name", ""),
+                "hash": scorecard_response.get("hash", ""),
+                "version_name": scorecard_response.get("version_name", ""),
+                "version": scorecard_response.get("version", ""),
+                "title": scorecard_response.get("title", ""),
+                "efr01": scorecard_response.get("efr01", False)
+            }
+        except Exception as e:
+            logger.error(f"Exception during security analysis: {str(e)}")
+            return {"error": f"An exception occurred during security analysis: {str(e)}"}
 
     def analyze_mobile_device_security(self, scan_response, scorecard_response, quark_result):
         """
@@ -397,21 +427,21 @@ class APKUploadView(APIView):
 
         # Prepare the analysis result for Mobile Device Security
         return {
-            "prevent_rooted_device_access": {
+            "Prevent Rooted Device Access": {
                 "score": 5 if rooted_detection else 0,
                 "status": "Passed" if rooted_detection else "Failed",
                 "details": "Application has root detection mechanisms implemented to prevent operation on rooted devices."
-                        f" MobSF Scorecard: {'Yes' if rooted_detection_mobsf else 'No'},"
-                        f" MobSF Scan: {'Yes' if rooted_detection_mobsf_scan else 'No'},"
-                        f" Quark: {'Yes' if rooted_detection_quark else 'No'}."
+                        # f" MobSF Scorecard: {'Yes' if rooted_detection_mobsf else 'No'},"
+                        # f" MobSF Scan: {'Yes' if rooted_detection_mobsf_scan else 'No'},"
+                        # f" Quark: {'Yes' if rooted_detection_quark else 'No'}."
             },
-            "disable_emulator_access": {
-                "score": 5 if emulator_detection else 0,
-                "status": "Passed" if emulator_detection else "Failed",
-                "details": "Emulator detection is in place to restrict access when running on emulators."
-                        f" MobSF: {'Yes' if emulator_detection_mobsf else 'No'},"
-                        f" Quark: {'Yes' if emulator_detection_quark else 'No'}."
-            }
+            # "Disable Emulator Access": {
+            #     "score": 5 if emulator_detection else 0,
+            #     "status": "Passed" if emulator_detection else "Failed",
+            #     "details": "Emulator detection is in place to restrict access when running on emulators."
+            #             # f" MobSF: {'Yes' if emulator_detection_mobsf else 'No'},"
+            #             # f" Quark: {'Yes' if emulator_detection_quark else 'No'}."
+            # }
         }
 
     def analyze_data_in_transit(self, scan_response, scorecard_response, quark_result):
@@ -457,20 +487,20 @@ class APKUploadView(APIView):
 
         # Prepare the analysis result for Data in Transit Security
         return {
-            "https_enforced": {
+            "HTTPS Enforcement": {
                 "score": 5 if https_enforced else 0,
                 "status": "Passed" if https_enforced else "Failed",
                 "details": "HTTPS is enforced to ensure all communication is encrypted."
-                        f" MobSF Scorecard: {'Yes' if https_enforced_mobsf else 'No'},"
-                        f" MobSF Scan: {'Yes' if https_enforced_mobsf_scan else 'No'},"
-                        f" Quark: {'Yes' if https_enforced_quark else 'No'}."
+                        # f" MobSF Scorecard: {'Yes' if https_enforced_mobsf else 'No'},"
+                        # f" MobSF Scan: {'Yes' if https_enforced_mobsf_scan else 'No'},"
+                        # f" Quark: {'Yes' if https_enforced_quark else 'No'}."
             },
-            "prevent_plaintext_transmission": {
+            "Prevent Plaintext Transmission": {
                 "score": 5 if plaintext_transmission_prevented else 0,
                 "status": "Passed" if plaintext_transmission_prevented else "Failed",
                 "details": "Sensitive data is not transmitted in plaintext, ensuring secure communication."
-                        f" MobSF: {'Yes' if plaintext_transmission_prevented_mobsf else 'No'},"
-                        f" Quark: {'Yes' if plaintext_transmission_prevented_quark else 'No'}."
+                        # f" MobSF: {'Yes' if plaintext_transmission_prevented_mobsf else 'No'},"
+                        # f" Quark: {'Yes' if plaintext_transmission_prevented_quark else 'No'}."
             }
         }
 
@@ -479,9 +509,9 @@ class APKUploadView(APIView):
         Analyze Data Storage aspects using MobSF, JADX, and Quark results with a focus on key criteria.
         """
         # Collect all the hardcoded secrets from scan_response, JADX, and MobSF reports
-        hardcoded_keys_scan = self.extract_secrets_from_scan_response(scan_response)
+        # hardcoded_keys_scan = self.extract_secrets_from_scan_response(scan_response)
         hardcoded_keys_jadx = self.find_hardcoded_keys(scan_response, scorecard_response, jadx_output_dir)
-        hardcoded_keys_mobsf = self.extract_hardcoded_keys_from_mobsf(scan_response, scorecard_response)
+        # hardcoded_keys_mobsf = self.extract_hardcoded_keys_from_mobsf( scorecard_response)
         hardcoded_keys_quark = [
             item for rule in quark_result.get("rules", [])
             if "hardcoded" in rule["rule_name"].lower() and rule["behavior_occurrences"]
@@ -513,24 +543,31 @@ class APKUploadView(APIView):
             #             f" MobSF: {'Yes' if secure_storage_mechanism_detected else 'No'}."
             # },
             # Check to avoid storing sensitive data in external storage
-            "avoid_storing_sensitive_data_in_external_storage": {
+            "Avoid Storing Sensitive Data in External Storage": {
                 "score": 5 if not external_storage_risk_mobsf else 0,
                 "status": "Passed" if not external_storage_risk_mobsf else "Failed",
                 "details": "Application does not store sensitive data in external storage, which reduces exposure risk."
-                        f" MobSF: {'Yes' if external_storage_risk_mobsf else 'No'}."
+                        # f" MobSF: {'Yes' if external_storage_risk_mobsf else 'No'}."
             },
             # Check for strong encryption for locally stored data
-            "strong_encryption_for_local_storage": {
+            "Strong Encryption for Locally Stored Data": {
                 "score": 5 if strong_encryption_detected else 0,
                 "status": "Passed" if strong_encryption_detected else "Failed",
                 "details": f"Application uses {'strong encryption (AES-256)' if strong_encryption_detected else 'weak or no encryption'} for locally stored data."
             },
             # Hardcoded keys check across MobSF, JADX, and Quark, as well as scan response secrets
-            "no_hardcoded_keys": {
-                "score": 5 if not hardcoded_keys_scan and not hardcoded_keys_jadx and not hardcoded_keys_mobsf and not hardcoded_keys_quark else 0,
-                "status": "Passed" if not hardcoded_keys_scan and not hardcoded_keys_jadx and not hardcoded_keys_mobsf and not hardcoded_keys_quark else "Failed",
-                "details": f"Hardcoded keys found: {hardcoded_keys_jadx}" if hardcoded_keys_scan or hardcoded_keys_jadx or hardcoded_keys_mobsf or hardcoded_keys_quark else "No hardcoded API keys found."
+            # "no_hardcoded_keys": {
+            #     "score": 5 if not hardcoded_keys_scan and not hardcoded_keys_jadx and not hardcoded_keys_mobsf and not hardcoded_keys_quark else 0,
+            #     "status": "Passed" if not hardcoded_keys_scan and not hardcoded_keys_jadx and not hardcoded_keys_mobsf and not hardcoded_keys_quark else "Failed",
+            #     "details": f"Hardcoded keys found: {hardcoded_keys_jadx}" if hardcoded_keys_scan or hardcoded_keys_jadx or hardcoded_keys_mobsf or hardcoded_keys_quark else "No hardcoded API keys found."
+            # },
+            "No Hardcoded Keys": {
+                "score": 5 if not hardcoded_keys_jadx and not hardcoded_keys_quark else 0,
+                "status": "Passed" if not hardcoded_keys_jadx and not hardcoded_keys_quark else "Failed",
+                "details": f"Hardcoded keys found:" if hardcoded_keys_jadx or hardcoded_keys_quark else "No hardcoded API keys found.",
+                "keys": hardcoded_keys_jadx
             },
+            
         }
 
     def analyze_cryptographic_practices(self, scan_response, scorecard_response, quark_result):
@@ -568,17 +605,17 @@ class APKUploadView(APIView):
         strong_encryption_detected = encryption_algorithm == "aes-256"  # Example of a strong encryption algorithm
 
         return {
-            "use_strong_encryption": {
+            "Use Strong Encryption": {
                 "score": 5 if strong_encryption_detected else 0,
                 "status": "Secure" if strong_encryption_detected else "Insecure",
                 "details": "The application uses AES-256 for encryption, which is considered secure." if strong_encryption_detected else "The application does not use strong encryption for local storage."
             },
-            "avoid_weak_hashing": {
+            "Avoid Weak Hashing Algorithms": {
                 "score": 0 if weak_hashing_detected else 5,
                 "status": "Failed" if weak_hashing_detected else "Passed",
                 "details": "The application uses a weak hashing algorithm (MD5, SHA-1) which is susceptible to hash collisions." if weak_hashing_detected else "No weak hashing algorithms detected."
             },
-            "avoid_insecure_rng": {
+            "Avoid Insecure Random Number Generators": {
                 "score": 0 if insecure_rng_detected else 5,
                 "status": "Failed" if insecure_rng_detected else "Passed",
                 "details": "The application uses an insecure Random Number Generator, which is susceptible to predictability and security vulnerabilities." if insecure_rng_detected else "No insecure Random Number Generators detected."
@@ -598,6 +635,7 @@ class APKUploadView(APIView):
             # Run APKiD on the APK file and get the output in JSON format
             result = subprocess.run(['apkid', '-j', apk_path], capture_output=True, text=True)
             apkid_result = json.loads(result.stdout)
+            logger.info(f"APKiD result: {apkid_result}")
 
             # Check if obfuscation or shrink was detected in the APKiD results
             for file_entry in apkid_result.get('files', []):
@@ -624,7 +662,7 @@ class APKUploadView(APIView):
         obfuscation_detected = obfuscation_detected or mobsf_obfuscation
 
         # Check for debugging settings using scorecard_response
-        debug_enabled_issues = [item for item in scorecard_response.get('high', []) if item.get('title') == "Debug Enabled For App"]
+        debug_enabled_issues = [item for item in scorecard_response.get('high', []) if (item.get('title') == "Debug Enabled For App" or item.get('title') == "Debug configuration enabled. Production builds must not be debuggable.")]
         if debug_enabled_issues:
             debugging_disabled = False
 
@@ -638,17 +676,83 @@ class APKUploadView(APIView):
         )
         
         return {
-            "code_obfuscation_and_shrink": {
+            "Code Obfuscation & Shrinking": {
                 "score": 5 if obfuscation_detected and shrink_detected else 0,
                 "status": "Enabled" if obfuscation_detected and shrink_detected else "Not Enabled",
                 "details": "Code obfuscation and shrinking techniques are implemented to protect against reverse engineering and reduce code size." if obfuscation_detected and shrink_detected else "No obfuscation or shrinking techniques detected."
             },
-            "disable_debugging": {
+            "Debugging Disabled": {
                 "score": debug_score,
                 "status": debug_status,
                 "details": debug_details
             }
         }
+        
+    def analyze_authentication_and_access_control(self, data_storage_results):
+        logger.info(f"Authentication & Access Control analysis STARTED")
+        """
+        Analyze Authentication & Access Control aspects using the hardcoded keys found in Data Storage analysis.
+        """
+        hardcoded_keys = data_storage_results.get("No Hardcoded Keys", {}).get("keys", [])
+        google_key_results = []
+
+        try:
+            logger.info(f"Hardcoded keys found: {hardcoded_keys}")
+            # Validate each Google API key found
+            for key_entry in hardcoded_keys:
+                key_value = key_entry.get("key", "")
+                if re.match(r'AIza[0-9A-Za-z-_]{35}', key_value):
+                    is_restricted = self.validate_google_api_key(key_value)
+                    logger.info(f"Validating Google API key Completed for {key_value} with is_restricted: {is_restricted}")
+                    if is_restricted is True:
+                        google_key_results.append({
+                            "key": key_value,
+                            "status": "Restricted",
+                            "details": "Restrictions are enabled for this Google API key."
+                        })
+                    elif is_restricted is False:
+                        google_key_results.append({
+                            "key": key_value,
+                            "status": "Unrestricted",
+                            "details": "Restrictions are NOT enabled for this Google API key."
+                        })
+                    else:
+                        google_key_results.append({
+                            "key": key_value,
+                            "status": "Unknown",
+                            "details": "Unable to determine if restrictions are enabled for this Google API key."
+                        })
+
+            # Check if there are any Google API keys to analyze
+            if google_key_results:
+                # If there are Google API keys analyzed, determine score and status
+                all_restricted = all(key.get("status") == "Restricted" for key in google_key_results)
+                score = 5 if all_restricted else 0
+                status = "Passed" if all_restricted else "Failed"
+            else:
+                # If there are no Google API keys, set score and status accordingly
+                score = 5
+                status = "No Keys Found"
+
+            # Generate results for Authentication & Access Control
+            logger.info(f"Authentication & Access Control analysis COMPLETED")
+            return {
+                "Google API Key Restrictions": {
+                    "score": score,
+                    "status": status,
+                    "details": google_key_results if google_key_results else "No Google API keys found for analysis."
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Exception during Authentication & Access Control analysis: {str(e)}")
+            return {
+                "Google API Key Restrictions": {
+                    "score": 0,
+                    "status": "Failed",
+                    "details": f"An error occurred during analysis: {str(e)}"
+                }
+            }
 
     def generate_recommendations(self, detailed_scores):
         """
@@ -657,13 +761,56 @@ class APKUploadView(APIView):
         recommendations = []
         for category, criteria in detailed_scores.items():
             for criterion, details in criteria.items():
-                if details['status'] == "Failed" or details['status'] == "Insecure":
+                if details['status'] in ["Failed", "Insecure"]:
+                    # Provide detailed recommendation based on criterion
+                    if category == "Mobile Device Security":
+                        if criterion == "Prevent Rooted Device Access":
+                            recommendation = "Implement root detection mechanisms to prevent the app from running on rooted or jailbroken devices."
+                        else:
+                            recommendation = "Review and improve security practices related to mobile device security."
+                    elif category == "Data in Transit":
+                        if criterion == "HTTPS Enforcement":
+                            recommendation = "Ensure that all network communication uses HTTPS to protect data in transit."
+                        elif criterion == "Prevent Plaintext Transmission":
+                            recommendation = "Avoid transmitting sensitive data in plaintext; use encryption protocols instead."
+                        else:
+                            recommendation = "Review and improve data in transit security practices."
+                    elif category == "Data Storage":
+                        if criterion == "Avoid Storing Sensitive Data in External Storage":
+                            recommendation = "Refrain from storing sensitive data on external storage where it can be accessed by other apps."
+                        elif criterion == "Strong Encryption for Locally Stored Data":
+                            recommendation = "Use strong encryption algorithms like AES-256 to secure locally stored data."
+                        elif criterion == "No Hardcoded Keys":
+                            recommendation = "Remove hardcoded keys from the source code and retrieve them securely at runtime."
+                        else:
+                            recommendation = "Review and improve data storage security practices."
+                    elif category == "Cryptographic Practices":
+                        if criterion == "Use Strong Encryption":
+                            recommendation = "Ensure that strong encryption algorithms are used for all cryptographic operations."
+                        elif criterion == "Avoid Weak Hashing Algorithms":
+                            recommendation = "Replace weak hashing algorithms like MD5 or SHA-1 with stronger ones like SHA-256."
+                        elif criterion == "Avoid Insecure Random Number Generators":
+                            recommendation = "Use secure random number generators provided by the platform's security library."
+                        else:
+                            recommendation = "Review and improve cryptographic practices."
+                    elif category == "Obfuscation & Code Security":
+                        recommendation = "Review and improve obfuscation and code security practices."
+                    elif category == "Authentication & Access Control":
+                        if criterion == "Google API Key Restrictions":
+                            recommendation = "Restrict Google API keys to authorized domains or IP addresses to prevent unauthorized use."
+                        else:
+                            recommendation = "Review and improve authentication and access control practices."
+                    else:
+                        recommendation = "Review and improve security practices."
+
                     recommendations.append({
                         "category": category,
-                        "recommendation": details.get('details', 'Review and improve security practices.')
+                        "criterion": criterion,
+                        "recommendation": recommendation
                     })
-        return recommendations
 
+        return recommendations
+    
     def count_hardcoded_keys(self, detailed_scores):
         """
         Count hardcoded keys based on detailed scores.
@@ -687,18 +834,18 @@ class APKUploadView(APIView):
             
         return hardcoded_keys
 
-    def extract_hardcoded_keys_from_mobsf(self, scan_response, scorecard_response):
-        """
-        Extract hardcoded API keys from MobSF's report.
-        """
-        hardcoded_keys = []
-        secrets_section = [item for item in scorecard_response.get('warning', []) if item.get('title') == "This app may contain hardcoded secrets"]
-        for secret in secrets_section:
-            description = secret.get("description", "")
-            matches = re.findall(r'"([^"]+)"\s*:\s*"([^"]+)"', description)
-            for key, value in matches:
-                hardcoded_keys.append({"key": key, "value": value, "source": "MobSF"})
-        return hardcoded_keys
+    # def extract_hardcoded_keys_from_mobsf(self, scorecard_response):
+    #     """
+    #     Extract hardcoded API keys from MobSF's report.
+    #     """
+    #     hardcoded_keys = []
+    #     secrets_section = [item for item in scorecard_response.get('warning', []) if item.get('title') == "This app may contain hardcoded secrets"]
+    #     for secret in secrets_section:
+    #         description = secret.get("description", "")
+    #         matches = re.findall(r'"([^"]+)"\s*:\s*"([^"]+)"', description)
+    #         for key, value in matches:
+    #             hardcoded_keys.append({"key": key, "value": value, "source": "MobSF"})
+    #     return hardcoded_keys
 
     def find_hardcoded_keys(self, scan_response, scorecard_response, jadx_output_dir):
         """
@@ -708,9 +855,9 @@ class APKUploadView(APIView):
         hardcoded_keys = []
 
         # Extract hardcoded secrets from MobSF JSON report and scan response
-        mobsf_keys = self.extract_hardcoded_keys_from_mobsf(scan_response, scorecard_response)
+        # mobsf_keys = self.extract_hardcoded_keys_from_mobsf(scorecard_response)
         scan_keys = self.extract_secrets_from_scan_response(scan_response)
-        hardcoded_keys.extend(mobsf_keys)
+        # hardcoded_keys.extend(mobsf_keys)
         hardcoded_keys.extend(scan_keys)
 
         # Define key patterns to search for in JADX decompiled code
@@ -740,6 +887,7 @@ class APKUploadView(APIView):
                                     })
 
         # Consolidate findings from MobSF, Scan Response, and JADX for analysis
+        logger.info(f"Hardcoded keys found: {hardcoded_keys}")
         consolidated_keys = self.consolidate_keys(hardcoded_keys)
         return consolidated_keys
 
@@ -748,17 +896,71 @@ class APKUploadView(APIView):
         Consolidate findings from MobSF, Scan Response, and JADX to remove duplicates and provide comprehensive analysis.
         """
         consolidated = []
-        seen_keys = set()
+        seen_keys = {}
 
         for key_entry in hardcoded_keys:
-            key_identifier = key_entry.get("key")
-            if key_identifier not in seen_keys:
-                seen_keys.add(key_identifier)
-                consolidated.append(key_entry)
+            key_str = key_entry.get("key")
+            
+            # Extract only the value from the key string
+            if ":" in key_str:
+                key_value = key_str.split(":", 1)[1].strip().strip('"').strip("'")
             else:
-                # If duplicate found, append file paths to the existing entry for completeness
-                for item in consolidated:
-                    if item["key"] == key_entry["key"]:
-                        item["file"] = f'{item.get("file", "")}, {key_entry.get("file", "")}'
+                key_value = key_str.strip().strip('"').strip("'")
+
+            # Check if this key has been seen before
+            if key_value not in seen_keys:
+                # Add the key to seen_keys and consolidated list
+                seen_keys[key_value] = {
+                    "key": key_value,
+                    "file": key_entry.get("file", "")
+                }
+                consolidated.append(seen_keys[key_value])
+            else:
+                # If the key already exists, append file paths for completeness
+                existing_entry = seen_keys[key_value]
+                existing_entry["file"] = f'{existing_entry.get("file", "")}, {key_entry.get("file", "")}'
 
         return consolidated
+    
+    def validate_google_api_key(self, api_key):
+        logger.info(f"Validating Google API key STARTED for key: {api_key}")
+        """
+        Check if Google API key is restricted or not.
+        :param api_key: The Google API key to be validated.
+        :return: Boolean indicating if the key has restrictions enabled.
+        """
+        try:
+            # Using Google Maps Geocode API to test the API key
+            url = f"https://maps.googleapis.com/maps/api/geocode/json?address=12,+bond+street,+Ringwood,+VICTORIA,+postcode,+AUSTRALIA&key={api_key}"
+            
+            # Send request to Google Maps Geocode API to validate the key
+            response = requests.get(url, timeout=10)  # Set a timeout to avoid hanging indefinitely
+            response_data = response.json()
+
+            # Check for the response status
+            if response.status_code == 200:
+                # Determine if restrictions are enabled based on the response
+                if response_data.get('status') == "REQUEST_DENIED" and "not authorized" in response_data.get("error_message", "").lower():
+                    logger.info(f"API key {api_key} is restricted.")
+                    return True  # Restrictions are enabled
+                elif response_data.get('status') == "OK":
+                    logger.info(f"API key {api_key} is unrestricted.")
+                    return False  # Restrictions are not enabled
+                else:
+                    # Handle other cases such as limit exceeded or other request issues
+                    logger.warning(f"Unexpected response while validating Google API key: {response_data}")
+                    return None
+            else:
+                # Handle error cases
+                logger.error(f"Failed to validate Google API key. Status code: {response.status_code}, Response: {response.text}")
+                return None
+
+        except requests.exceptions.Timeout as e:
+            logger.error(f"Timeout error while validating Google API key: {str(e)}")
+            return None
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network-related error while validating Google API key: {str(e)}")
+            return None
+        except Exception as e:
+            logger.error(f"Exception occurred while validating Google API key: {str(e)}")
+            return None
