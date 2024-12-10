@@ -35,7 +35,7 @@ DroidKey Backend is a Django-based web application designed to perform comprehen
 
 1. **Download the Code Repository**:  
    Visit the following link to download the repository as a ZIP file:  
-   [Download DroidKey-Backend](https://anonymous.4open.science/api/repo/DroidKey-Backend-A51A/zip)
+   [ https://anonymous.4open.science/api/repo/DroidKey-Backend-A51A/zip](https://anonymous.4open.science/api/repo/DroidKey-Backend-A51A/zip)
 
 2. **Extract the ZIP File**:  
    After downloading the ZIP file, extract its contents using any file extraction tool of your choice.
@@ -273,9 +273,7 @@ JADX is used to decompile the APK into Java source code.
 
 Quark Engine is used to detect malicious behaviors in the APK.
 
-- **Rule-Based Analysis**: Custom rules in the
-
-rules
+- **Rule-Based Analysis**: Custom rules in the rules
 
 directory are parsed and applied in `analyze_with_quark`.
 
