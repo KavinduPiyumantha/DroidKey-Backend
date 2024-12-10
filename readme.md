@@ -33,14 +33,17 @@ DroidKey Backend is a Django-based web application designed to perform comprehen
 
 ## Installation
 
-1. **Clone the repository**:
+1. **Download the Code Repository**:  
+   Visit the following link to download the repository as a ZIP file:  
+   [Download DroidKey-Backend](https://anonymous.4open.science/api/repo/DroidKey-Backend-A51A/zip)
 
-   ```bash
-   git clone https://github.com/yourusername/droidkey-backend.git
-   cd droidkey-backend
-   ```
+2. **Extract the ZIP File**:  
+   After downloading the ZIP file, extract its contents using any file extraction tool of your choice.
 
-2. **Ensure Docker and Docker Compose are installed**.
+3. **Navigate to the Project Directory**:  
+   Open the extracted folder and navigate to the `droidkey-backend` directory using cmd.
+
+4. **Ensure Docker and Docker Compose are installed**.
 
 ## Running the Project
 
