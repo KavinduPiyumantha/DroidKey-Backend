@@ -35,7 +35,7 @@ DroidKey Backend is a Django-based web application designed to perform comprehen
 
 1. **Download the Code Repository**:  
    Visit the following link to download the repository as a ZIP file:  
-   [ https://anonymous.4open.science/api/repo/DroidKey-Backend-A51A/zip](https://anonymous.4open.science/api/repo/DroidKey-Backend-A51A/zip)
+   [ https://anonymous.4open.science/api/repo/DroidKey-Backend-A51A](https://anonymous.4open.science/api/repo/DroidKey-Backend-A51A/zip)
 
 2. **Extract the ZIP File**:  
    After downloading the ZIP file, extract its contents using any file extraction tool of your choice.
